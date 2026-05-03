@@ -1,0 +1,63 @@
+### Build outputs ###
+target/
+!.mvn/wrapper/maven-wrapper.jar
+build/
+dist/
+nbbuild/
+nbdist/
+
+### Local secrets — never commit ###
+.env
+.env.alipay
+.env.local
+.env.*.local
+*.pem
+*.p12
+ALIPAY_TEST.md
+
+### Other Wuryannnnn repos cloned into this workspace (have their own git) ###
+wms/
+
+### Generated business data / scraping artifacts ###
+meituan_dish_images/
+meituan_dish_images.zip
+dishes_v1_backup.json
+dishes_new.json
+
+### Dev / debugging artifacts ###
+*.png
+*.jpg
+*.jpeg
+!frontend/public/**/*.png
+!frontend/public/**/*.jpg
+!src/main/resources/static/**/*.png
+!src/main/resources/static/**/*.jpg
+.playwright-mcp/
+logs/
+*.log
+
+### Frontend ###
+node_modules/
+.next/
+.cache/
+.vite/
+.eslintcache
+
+### IDE / OS ###
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.DS_Store
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.nb-gradle/
+nbproject/private/
+
+### Claude Code session-local config ###
+.claude/settings.local.json

@@ -1,0 +1,78 @@
+spring:
+  main:
+    allow-circular-references: true
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:sell;DB_CLOSE_DELAY=-1;MODE=MySQL
+    username: sa
+    password:
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
+    database-platform: org.hibernate.dialect.H2Dialect
+    defer-datasource-initialization: true
+  sql:
+    init:
+      mode: always
+      data-locations: classpath:data-local.sql,classpath:seed_meituan_products.sql
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jackson:
+    default-property-inclusion: non_null
+  redis:
+    host: 127.0.0.1
+    port: 6370
+
+wechat:
+  mpAppId: test
+  mpAppSecret: test
+  openAppId: test
+  openAppSecret: test
+  mchId: test
+  mchKey: test
+  keyPath:
+  notifyUrl: http://localhost:8080/sell/pay/notify
+  templateId:
+    orderStatus: test
+
+# ===== 支付宝 =====
+# 测试账号: 到 open.alipay.com → 开发者中心 → 沙箱, 一键生成
+#   - 沙箱 appId 以 "9021" 开头
+#   - 系统提供「测试买家账号」(自带余额) 用来扫码付款
+#   - 回调 URL 必须公网可达 (用 cloudflared 把 /sell/pay/alipay/notify 暴露出去即可)
+alipay:
+  sandbox: true                 # ← 沙箱开关, 上线前改回 false
+  appId: ${ALIPAY_APP_ID:}      # 沙箱版或正式版 appId
+  privateKey: ${ALIPAY_PRIVATE_KEY:}          # 商户私钥 (沙箱工具生成)
+  aliPayPublicKey: ${ALIPAY_PUBLIC_KEY:}      # 支付宝公钥 (上传自己公钥后由沙箱返回)
+  notifyUrl: ${ALIPAY_NOTIFY_URL:http://localhost:8080/sell/pay/alipay/notify}
+  returnUrl: ${ALIPAY_RETURN_URL:http://localhost:5173/order/status}
+
+projectUrl:
+  wechatMpAuthorize: http://localhost:8080
+  wechatOpenAuthorize: http://localhost:8080
+  sell: http://localhost:8080
+
+logging:
+  level:
+    com.sell: debug
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+
+upyun:
+  bucketName: test
+  userName: test
+  password: test
+  imageHost: http://localhost:8080/
+
+server:
+  servlet:
+    context-path: /sell

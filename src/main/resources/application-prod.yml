@@ -1,0 +1,71 @@
+spring:
+  main:
+    allow-circular-references: true
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/cafe?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:cafe}
+    password: ${DB_PASSWORD:}
+
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: update
+    database-platform: org.hibernate.dialect.MySQLDialect
+    defer-datasource-initialization: true
+
+  sql:
+    init:
+      mode: always
+      data-locations: classpath:data-local.sql
+      continue-on-error: true   # 重复 INSERT 报错忽略, 第一次启动后种子数据就在了
+
+  jackson:
+    default-property-inclusion: non_null
+
+wechat:
+  mpAppId: test
+  mpAppSecret: test
+  openAppId: test
+  openAppSecret: test
+  mchId: test
+  mchKey: test
+  keyPath:
+  notifyUrl: ${WECHAT_NOTIFY_URL:http://localhost:8080/sell/pay/notify}
+  templateId:
+    orderStatus: test
+
+alipay:
+  sandbox: true
+  appId: ${ALIPAY_APP_ID:}
+  privateKey: ${ALIPAY_PRIVATE_KEY:}
+  aliPayPublicKey: ${ALIPAY_PUBLIC_KEY:}
+  notifyUrl: ${ALIPAY_NOTIFY_URL:}
+  returnUrl: ${ALIPAY_RETURN_URL:}
+
+projectUrl:
+  wechatMpAuthorize: http://localhost:8080
+  wechatOpenAuthorize: http://localhost:8080
+  sell: http://localhost:8080
+
+logging:
+  level:
+    com.sell: info
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+
+upyun:
+  bucketName: test
+  userName: test
+  password: test
+  imageHost: ""
+
+server:
+  servlet:
+    context-path: /sell
