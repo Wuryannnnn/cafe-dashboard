@@ -209,13 +209,15 @@ function StatCard({
 }
 
 function TrendDelta({ today, yest }: { today?: number; yest?: number }) {
-  if (!today || !yest) return <span>较昨日 —</span>
+  // 仅当数据缺失或昨日为 0(无法算环比)时显示 —; 今日真为 0 应展示 -100% 而非被吞掉
+  if (today == null || yest == null || yest === 0) return <span>较昨日 —</span>
   const diff = today - yest
   if (diff === 0) return <span>较昨日 持平</span>
   const pct = ((diff / yest) * 100).toFixed(1)
   const up = diff > 0
+  // 营收: 涨=绿(好), 跌=红(差)
   return (
-    <span className={up ? 'text-destructive' : 'text-emerald-600'}>
+    <span className={up ? 'text-emerald-600' : 'text-destructive'}>
       较昨日 {up ? <ArrowUp className='inline size-3' /> : <ArrowDown className='inline size-3' />}
       {Math.abs(Number(pct))}%
     </span>
