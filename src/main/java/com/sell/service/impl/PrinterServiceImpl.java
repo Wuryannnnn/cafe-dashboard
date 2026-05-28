@@ -158,12 +158,16 @@ public class PrinterServiceImpl implements PrinterService {
             }
             sb.append("\n");
 
-            BigDecimal linePrice = item.getProductPrice().multiply(new BigDecimal(item.getProductQuantity()));
+            int qty = item.getProductQuantity() != null ? item.getProductQuantity() : 0;
+            BigDecimal unit = item.getProductPrice() != null ? item.getProductPrice() : BigDecimal.ZERO;
+            BigDecimal linePrice = unit.multiply(new BigDecimal(qty));
             BigDecimal addonFee = item.getAddonFee() != null ?
-                    item.getAddonFee().multiply(new BigDecimal(item.getProductQuantity())) : BigDecimal.ZERO;
+                    item.getAddonFee().multiply(new BigDecimal(qty)) : BigDecimal.ZERO;
 
-            sb.append("  x").append(item.getProductQuantity());
-            sb.append("              ").append(linePrice.add(addonFee)).append("元\n");
+            sb.append("  x").append(qty);
+            sb.append("              ")
+              .append(linePrice.add(addonFee).setScale(2, java.math.RoundingMode.HALF_UP).toPlainString())
+              .append("元\n");
 
             if (item.getAddons() != null && !item.getAddons().isEmpty() && !item.getAddons().equals("[]")) {
                 String addonNames = parseAddonNames(item.getAddons());
@@ -177,7 +181,10 @@ public class PrinterServiceImpl implements PrinterService {
 
         sb.append("--------------------------------\n");
         sb.append("\u001B\u0045\u0001");
-        sb.append("合计: ").append(orderDTO.getOrderAmount() != null ? orderDTO.getOrderAmount() : total).append("元\n");
+        sb.append("合计: ")
+          .append((orderDTO.getOrderAmount() != null ? orderDTO.getOrderAmount() : total)
+                  .setScale(2, java.math.RoundingMode.HALF_UP).toPlainString())
+          .append("元\n");
         sb.append("\u001B\u0045\u0000");
 
         if (orderDTO.getOrderRemark() != null && !orderDTO.getOrderRemark().isEmpty()) {

@@ -20,22 +20,24 @@ spring:
 #    com.sell.LoggerTest: debug
 
 wechat:
+  # 凭据改为从环境变量注入, 不再硬编码进仓库 (与 application-prod.yml 一致).
+  # 注意: 历史提交里已包含旧值, 请轮换 mchKey / openAppSecret 等密钥.
   # 公众账号, 授权
-  mpAppId: wxd898fcb01713c658
-  mpAppSecret:
+  mpAppId: ${WECHAT_MP_APPID:}
+  mpAppSecret: ${WECHAT_MP_APPSECRET:}
 
   # 开放平台,  卖家扫码登录用
-  openAppId: wx6ad144e54af67d87
-  openAppSecret: 91a2ff6d38a2bbccfb7e9xxxxxx
+  openAppId: ${WECHAT_OPEN_APPID:}
+  openAppSecret: ${WECHAT_OPEN_APPSECRET:}
 
   # 支付/商户号
-  mchId: 1483469312
-  mchKey: 06C56A89949D617xxxxxxxxxxx
+  mchId: ${WECHAT_MCH_ID:}
+  mchKey: ${WECHAT_MCH_KEY:}
   # 发起支付不需要证书, 退款需要
   keyPath:
-  notifyUrl: http://sell.natapp4.cc/sell/pay/notify
+  notifyUrl: ${WECHAT_NOTIFY_URL:http://sell.natapp4.cc/sell/pay/notify}
   templateId:
-    orderStatus: e-Cqq67QxD6YNI41iRiqawEYdFavW_7pc7LyEMb-yeQ
+    orderStatus: ${WECHAT_TPL_ORDER_STATUS:}
 
 # 支付宝
 alipay:
@@ -57,10 +59,10 @@ mybatis:
 
 # 又拍云服务 见 https://console.upyun.com/services/file/
 upyun:
-  bucketName: XXX
-  userName: xxx
-  password: xxxx
-  imageHost: http://xxx.com/
+  bucketName: ${UPYUN_BUCKET:}
+  userName: ${UPYUN_USERNAME:}
+  password: ${UPYUN_PASSWORD:}
+  imageHost: ${UPYUN_IMAGE_HOST:}
 server:
   servlet:
     context-path: /sell
