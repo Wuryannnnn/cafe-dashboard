@@ -3,7 +3,6 @@ package com.sell.service.impl;
 import com.sell.dataobject.OrderMaster;
 import com.sell.dataobject.ProductCategory;
 import com.sell.dataobject.ProductInfo;
-import com.sell.enums.OrderStatusEnum;
 import com.sell.enums.PayTypeEnum;
 import com.sell.repository.OrderDetailRepository;
 import com.sell.repository.OrderMasterRepository;
@@ -39,9 +38,8 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public List<OrderMaster> findValidOrders(Date start, Date end) {
-        return orderMasterRepository.findByDateRange(start, end).stream()
-                .filter(o -> !OrderStatusEnum.REFUNDED.getCode().equals(o.getOrderStatus()))
-                .collect(Collectors.toList());
+        // findByDateRange 已按 payStatus=1 过滤(排除未支付/已退款), 与 totals() 完全同口径, 直接返回即可
+        return orderMasterRepository.findByDateRange(start, end);
     }
 
     @Override

@@ -127,19 +127,19 @@ public class MemberServiceImpl implements MemberService {
     @Override
     @Transactional
     public BalanceRecord consume(Integer memberId, BigDecimal amount, String orderId, String remark) {
-        Member m = findOrThrow(memberId);
         if (amount == null || amount.signum() <= 0) {
             throw new SellException(1, "消费金额必须 > 0");
         }
-        if (m.getBalance().compareTo(amount) < 0) {
+        if (memberId == null || !memberRepository.existsById(memberId)) {
+            throw new SellException(1, "会员不存在");
+        }
+        // 原子扣减: WHERE balance >= amount, 并发下不会双花/扣成负数
+        int updated = memberRepository.deductBalance(memberId, amount, new Date());
+        if (updated == 0) {
             throw new SellException(1, "余额不足");
         }
-        m.setBalance(m.getBalance().subtract(amount));
-        m.setTotalSpend(m.getTotalSpend().add(amount));
-        m.setSpendCount(m.getSpendCount() + 1);
-        m.setLastSpendTime(new Date());
-        m.setUpdateTime(new Date());
-        memberRepository.save(m);
+        // 扣减后重新加载(clearAutomatically 保证读到最新余额), 评估等级并记账
+        Member m = findOrThrow(memberId);
         evaluateLevel(m);
 
         BalanceRecord r = new BalanceRecord();
@@ -238,17 +238,30 @@ public class MemberServiceImpl implements MemberService {
     @Override
     @Transactional
     public MemberCoupon issueCoupon(Integer memberId, Integer couponId) {
-        Member m = findOrThrow(memberId);
+        findOrThrow(memberId);
         Coupon c = couponRepository.findById(couponId).orElseThrow(() -> new SellException(1, "券不存在"));
+
+        if (Boolean.FALSE.equals(c.getEnabled())) {
+            throw new SellException(1, "优惠券已停用");
+        }
+        Date now = new Date();
+        if (c.getValidFrom() != null && now.before(c.getValidFrom())) {
+            throw new SellException(1, "优惠券未到生效时间");
+        }
+        if (c.getValidTo() != null && now.after(c.getValidTo())) {
+            throw new SellException(1, "优惠券已过期");
+        }
+        // 原子占用一个发行额度(尊重 totalQuantity 上限, 并发安全); 0=已发完
+        if (couponRepository.tryIssue(couponId, now) == 0) {
+            throw new SellException(1, "优惠券已发完");
+        }
+
         MemberCoupon mc = new MemberCoupon();
         mc.setMemberId(memberId);
         mc.setCouponId(couponId);
         mc.setStatus(0);
-        mc.setObtainedTime(new Date());
-        memberCouponRepo.save(mc);
-        c.setIssuedQuantity((c.getIssuedQuantity() == null ? 0 : c.getIssuedQuantity()) + 1);
-        couponRepository.save(c);
-        return mc;
+        mc.setObtainedTime(now);
+        return memberCouponRepo.save(mc);
     }
 
     private Member findOrThrow(Integer memberId) {
