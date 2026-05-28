@@ -74,6 +74,14 @@
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
 
+		<!-- 仅引入 crypto 模块用于 BCrypt 密码哈希; 不含 spring-security-config/web,
+		     不会触发 Spring Security 过滤器链或默认登录页. 版本锁定为本地已缓存的 6.0.2. -->
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-crypto</artifactId>
+			<version>6.0.2</version>
+		</dependency>
+
 		<dependency>
 			<groupId>com.github.binarywang</groupId>
 			<artifactId>weixin-java-mp</artifactId>

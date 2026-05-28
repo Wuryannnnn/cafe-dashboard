@@ -1,6 +1,37 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
+import { api } from '@/lib/api'
+import { ROLE_NAMES } from '@/lib/permissions'
+import { useAuthStore } from '@/stores/auth-store'
 import { AuthenticatedLayout } from '@/components/layout/authenticated-layout'
 
 export const Route = createFileRoute('/_authenticated')({
+  // 进入后台前校验登录态: 调用 /api/admin/me, 未登录跳转登录页.
+  // 真实凭据是 HttpOnly 的 admin_token cookie, 由 withCredentials 自动携带.
+  beforeLoad: async ({ location }) => {
+    let ok = false
+    try {
+      const res = await api.get<{
+        code: number
+        data?: { username: string; name?: string; role: number }
+      }>('/api/admin/me')
+      if (res.data?.code === 0 && res.data.data) {
+        const u = res.data.data
+        // 回填登录态(含角色码), 使刷新/直达页面后导航与权限仍可用
+        useAuthStore.getState().auth.setUser({
+          accountNo: u.username,
+          email: u.username,
+          role: [ROLE_NAMES[u.role] ?? String(u.role)],
+          roleCode: u.role,
+          exp: Date.now() + 12 * 60 * 60 * 1000,
+        })
+        ok = true
+      }
+    } catch {
+      ok = false
+    }
+    if (!ok) {
+      throw redirect({ to: '/sign-in', search: { redirect: location.href } })
+    }
+  },
   component: AuthenticatedLayout,
 })

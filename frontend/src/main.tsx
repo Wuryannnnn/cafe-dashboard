@@ -65,7 +65,7 @@ const queryClient = new QueryClient({
           }
         }
         if (error.response?.status === 403) {
-          // router.navigate("/forbidden", { replace: true });
+          toast.error('无权访问该功能')
         }
       }
     },
