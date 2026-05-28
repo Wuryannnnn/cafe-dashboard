@@ -1,6 +1,6 @@
 import { useLayout } from '@/context/layout-provider'
 import { useAuthStore } from '@/stores/auth-store'
-import { navAllowed } from '@/lib/permissions'
+import { navAllowed, roleName } from '@/lib/permissions'
 import {
   Sidebar,
   SidebarContent,
@@ -16,7 +16,17 @@ import { TeamSwitcher } from './team-switcher'
 
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
-  const roleCode = useAuthStore((s) => s.auth.user?.roleCode)
+  const authUser = useAuthStore((s) => s.auth.user)
+  const roleCode = authUser?.roleCode
+
+  // 显示真实登录员工(姓名 + 角色), 未登录时回退到默认数据
+  const navUser = authUser
+    ? {
+        name: authUser.name || authUser.email || '员工',
+        email: roleName(roleCode) || authUser.email,
+        avatar: '',
+      }
+    : sidebarData.user
 
   // 按当前登录角色过滤导航; 子项全被过滤掉的分组也隐藏
   const navGroups = sidebarData.navGroups
@@ -43,7 +53,7 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={sidebarData.user} />
+        <NavUser user={navUser} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

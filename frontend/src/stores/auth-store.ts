@@ -6,6 +6,8 @@ const ACCESS_TOKEN = 'thisisjustarandomstring'
 interface AuthUser {
   accountNo: string
   email: string
+  /** 员工姓名 (展示用). */
+  name?: string
   role: string[]
   /** 数字角色码: 0老板 1店长 2收银员 3制作员 (用于前端权限判断). */
   roleCode?: number
