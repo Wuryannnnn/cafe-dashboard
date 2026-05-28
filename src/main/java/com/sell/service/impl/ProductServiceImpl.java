@@ -69,35 +69,26 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public void increaseStock(List<CartDTO> cartDTOList) {
         for (CartDTO cartDTO: cartDTOList) {
-            ProductInfo productInfo = repository.findById(cartDTO.getProductId()).orElse(null);
-            if (productInfo == null) {
+            int updated = repository.increaseStockAtomic(cartDTO.getProductId(), cartDTO.getProductQuantity());
+            if (updated == 0) {
                 throw new SellException(ResultEnum.PRODUCT_NOT_EXIST);
             }
-            Integer result = productInfo.getProductStock() + cartDTO.getProductQuantity();
-            productInfo.setProductStock(result);
-
-            repository.save(productInfo);
         }
-
     }
 
     @Override
     @Transactional
     public void decreaseStock(List<CartDTO> cartDTOList) {
         for (CartDTO cartDTO: cartDTOList) {
-            ProductInfo productInfo = repository.findById(cartDTO.getProductId()).orElse(null);
-            if (productInfo == null) {
-                throw new SellException(ResultEnum.PRODUCT_NOT_EXIST);
-            }
-
-            Integer result = productInfo.getProductStock() - cartDTO.getProductQuantity();
-            if (result < 0) {
+            // 原子条件扣减: WHERE productStock >= quantity, 并发下也不会超卖
+            int updated = repository.decreaseStockAtomic(cartDTO.getProductId(), cartDTO.getProductQuantity());
+            if (updated == 0) {
+                // 0 行: 区分"商品不存在" 与 "库存不足", 给出准确错误
+                if (!repository.existsById(cartDTO.getProductId())) {
+                    throw new SellException(ResultEnum.PRODUCT_NOT_EXIST);
+                }
                 throw new SellException(ResultEnum.PRODUCT_STOCK_ERROR);
             }
-
-            productInfo.setProductStock(result);
-
-            repository.save(productInfo);
         }
     }
 

@@ -64,6 +64,7 @@ public enum ResultEnum {
     NEW_AMOUNT_ERROR(36, "改价金额必须 >= 0"),
     PAYMENT_METHOD_NOT_EXIST(37, "结账方式不存在"),
     COUPON_NOT_EXIST(38, "优惠券不存在"),
+    ORDER_REFUND_FAIL(39, "退款失败, 请稍后重试"),
     ;
 
     private Integer code;
