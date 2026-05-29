@@ -25,4 +25,13 @@ public interface ProductSkuRepository extends JpaRepository<ProductSku, String> 
     @Query("UPDATE ProductSku s SET s.skuStock = s.skuStock + :quantity "
             + "WHERE s.skuId = :skuId AND s.skuStock IS NOT NULL")
     int increaseSkuStock(@Param("skuId") String skuId, @Param("quantity") Integer quantity);
+
+    /**
+     * 原子调整 SKU 库存 (手动盘点, delta 可正可负): 仅当调整后不为负时才更新, null 视为 0.
+     * 避免并发"读-改-写"丢失更新. 返回受影响行数 (1=成功, 0=调整后会变负).
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE ProductSku s SET s.skuStock = COALESCE(s.skuStock, 0) + :delta "
+            + "WHERE s.skuId = :skuId AND COALESCE(s.skuStock, 0) + :delta >= 0")
+    int adjustSkuStockAtomic(@Param("skuId") String skuId, @Param("delta") Integer delta);
 }

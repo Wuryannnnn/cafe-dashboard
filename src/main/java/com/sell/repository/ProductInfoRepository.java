@@ -31,4 +31,14 @@ public interface ProductInfoRepository extends JpaRepository<ProductInfo, String
     @Modifying
     @Query("UPDATE ProductInfo p SET p.productStock = p.productStock + :quantity WHERE p.productId = :productId")
     int increaseStockAtomic(@Param("productId") String productId, @Param("quantity") Integer quantity);
+
+    /**
+     * 原子调整库存 (手动盘点, delta 可正可负): 仅当调整后不为负时才更新, null 视为 0.
+     * 避免"读-改-写"被并发覆盖(丢失更新). 返回受影响行数 (1=成功, 0=调整后会变负).
+     * clearAutomatically: 更新后清持久化上下文, 使随后再读到的是最新值(用于写流水的 stockAfter).
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE ProductInfo p SET p.productStock = COALESCE(p.productStock, 0) + :delta "
+            + "WHERE p.productId = :productId AND COALESCE(p.productStock, 0) + :delta >= 0")
+    int adjustStockAtomic(@Param("productId") String productId, @Param("delta") Integer delta);
 }
