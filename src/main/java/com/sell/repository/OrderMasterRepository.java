@@ -1,18 +1,30 @@
 package com.sell.repository;
 
 import com.sell.dataobject.OrderMaster;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 public interface OrderMasterRepository extends JpaRepository<OrderMaster, String> {
 
     Page<OrderMaster> findByBuyerOpenid(String buyerOpenid, Pageable pageable);
+
+    /**
+     * 悲观行锁读取订单, 用于 paid/cancel/refund 串行化:
+     * 防止微信/支付宝并发回调重复置为已支付, 以及"取消+退款"并发各自返还一次库存(库存翻倍虚高).
+     * 拿到锁后必须以返回实体的最新状态为准做判断, 不能信任调用方传入的旧 DTO 状态.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM OrderMaster o WHERE o.orderId = :orderId")
+    Optional<OrderMaster> findByOrderIdForUpdate(@Param("orderId") String orderId);
 
     // 营收口径统一为"已支付"(payStatus=1): 自动排除未支付(0)与已退款(2, 退款后置为该状态),
     // 与 sumByPayType 一致, 使总额卡片与每日/品类明细可对账.

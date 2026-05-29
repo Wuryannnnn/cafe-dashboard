@@ -16,8 +16,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import java.util.Optional;
+
 import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 public class OrderServiceMakingReadyTest {
@@ -110,9 +113,12 @@ public class OrderServiceMakingReadyTest {
     }
 
     // ======== cancel() ========
+    // 注: paid/cancel/refund 现以悲观行锁重读订单(findByOrderIdForUpdate)的最新状态为准,
+    // 故需 stub 该方法返回与场景一致的 OrderMaster.
 
     @Test(expected = SellException.class)
     public void cancel_alreadyFinished() {
+        lock(OrderStatusEnum.FINISHED, PayStatusEnum.SUCCESS);
         OrderDTO dto = buildDTO(OrderStatusEnum.FINISHED);
         dto.setOrderDetailList(new java.util.ArrayList<>());
         orderService.cancel(dto);
@@ -120,6 +126,7 @@ public class OrderServiceMakingReadyTest {
 
     @Test(expected = SellException.class)
     public void cancel_alreadyCancelled() {
+        lock(OrderStatusEnum.CANCEL, PayStatusEnum.WAIT);
         OrderDTO dto = buildDTO(OrderStatusEnum.CANCEL);
         dto.setOrderDetailList(new java.util.ArrayList<>());
         orderService.cancel(dto);
@@ -129,6 +136,7 @@ public class OrderServiceMakingReadyTest {
 
     @Test
     public void paid_success() {
+        lock(OrderStatusEnum.NEW, PayStatusEnum.WAIT);
         OrderDTO dto = buildDTO(OrderStatusEnum.NEW);
         dto.setPayStatus(PayStatusEnum.WAIT.getCode());
         OrderDTO result = orderService.paid(dto);
@@ -137,6 +145,7 @@ public class OrderServiceMakingReadyTest {
 
     @Test(expected = SellException.class)
     public void paid_wrongOrderStatus() {
+        lock(OrderStatusEnum.FINISHED, PayStatusEnum.WAIT);
         OrderDTO dto = buildDTO(OrderStatusEnum.FINISHED);
         dto.setPayStatus(PayStatusEnum.WAIT.getCode());
         orderService.paid(dto);
@@ -144,9 +153,19 @@ public class OrderServiceMakingReadyTest {
 
     @Test(expected = SellException.class)
     public void paid_alreadyPaid() {
+        lock(OrderStatusEnum.NEW, PayStatusEnum.SUCCESS);
         OrderDTO dto = buildDTO(OrderStatusEnum.NEW);
         dto.setPayStatus(PayStatusEnum.SUCCESS.getCode());
         orderService.paid(dto);
+    }
+
+    /** stub 行锁重读, 返回带指定状态的订单主表. */
+    private void lock(OrderStatusEnum status, PayStatusEnum payStatus) {
+        OrderMaster m = new OrderMaster();
+        m.setOrderId("test_order_001");
+        m.setOrderStatus(status.getCode());
+        m.setPayStatus(payStatus.getCode());
+        when(orderMasterRepository.findByOrderIdForUpdate(anyString())).thenReturn(Optional.of(m));
     }
 
     private OrderDTO buildDTO(OrderStatusEnum status) {

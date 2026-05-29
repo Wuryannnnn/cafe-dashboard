@@ -80,6 +80,32 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private com.sell.repository.ShopConfigRepository shopConfigRepoForWms;
 
+    @Autowired
+    private com.sell.repository.StockRecordRepository stockRecordRepository;
+
+    /**
+     * 记一条库存流水 (订单消耗/返还), 关联 orderId 便于对账.
+     * recordType: 2=出库(下单消耗), 1=入库(取消/退款返还). delta 为带符号变动量.
+     * 流水属审计旁路, 记录失败仅告警, 不回滚也不影响下单/退款主流程.
+     */
+    private void writeStockLedger(int recordType, String orderId, OrderDetail d, int delta) {
+        try {
+            com.sell.dataobject.StockRecord r = new com.sell.dataobject.StockRecord();
+            r.setRecordType(recordType);
+            r.setProductId(d.getProductId());
+            r.setProductName(d.getProductName());
+            r.setSkuId(d.getSkuId() != null && !d.getSkuId().isEmpty() ? d.getSkuId() : null);
+            r.setSkuName(d.getSkuName());
+            r.setDelta(delta);
+            r.setOrderId(orderId);
+            r.setOperator("system");
+            r.setCreateTime(new java.util.Date());
+            stockRecordRepository.save(r);
+        } catch (Exception e) {
+            log.warn("[库存流水] 记录失败 order={}, product={}: {}", orderId, d.getProductId(), e.getMessage());
+        }
+    }
+
     @Override
     @Transactional
     public OrderDTO create(OrderDTO orderDTO) {
@@ -184,6 +210,11 @@ public class OrderServiceImpl implements OrderService {
             if (updated == 0) {
                 throw new SellException(ResultEnum.PRODUCT_SKU_STOCK_ERROR);
             }
+        }
+
+        // 库存流水: 每条明细记一笔出库, 关联 orderId, 便于事后对账"库存为何变动"
+        for (OrderDetail d : orderDTO.getOrderDetailList()) {
+            writeStockLedger(2, orderId, d, d.getProductQuantity() == null ? 0 : -d.getProductQuantity());
         }
 
         //发送websocket消息
@@ -369,49 +400,55 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderDTO cancel(OrderDTO orderDTO) {
-        OrderMaster orderMaster = new OrderMaster();
+        // 行锁重读: 串行化取消/退款/支付回调, 避免并发下重复退款 + 重复返还库存. 以锁内最新状态为准.
+        OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderDTO.getOrderId())
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
 
         //判断订单状态: 已完结 / 已取消 / 已退款 的不能再取消 (防止重复退款 + 重复返库存)
-        if (orderDTO.getOrderStatus().equals(OrderStatusEnum.FINISHED.getCode())
-                || orderDTO.getOrderStatus().equals(OrderStatusEnum.CANCEL.getCode())
-                || orderDTO.getOrderStatus().equals(OrderStatusEnum.REFUNDED.getCode())) {
-            log.error("【取消订单】订单状态不正确, orderId={}, orderStatus={}", orderDTO.getOrderId(), orderDTO.getOrderStatus());
+        if (orderMaster.getOrderStatus().equals(OrderStatusEnum.FINISHED.getCode())
+                || orderMaster.getOrderStatus().equals(OrderStatusEnum.CANCEL.getCode())
+                || orderMaster.getOrderStatus().equals(OrderStatusEnum.REFUNDED.getCode())) {
+            log.error("【取消订单】订单状态不正确, orderId={}, orderStatus={}", orderMaster.getOrderId(), orderMaster.getOrderStatus());
             throw new SellException(ResultEnum.ORDER_STATUS_ERROR);
         }
 
         //订单详情校验提前到外部退款之前, 避免"已退款却因详情为空回滚"导致钱退了但订单没动
         if (CollectionUtils.isEmpty(orderDTO.getOrderDetailList())) {
-            log.error("【取消订单】订单中无商品详情, orderDTO={}", orderDTO);
+            log.error("【取消订单】订单中无商品详情, orderId={}", orderMaster.getOrderId());
             throw new SellException(ResultEnum.ORDER_DETAIL_EMPTY);
         }
 
         //如果已支付, 先退款 —— 退款失败抛异常回滚整个取消, 不会出现"已取消但没退钱"
-        if (PayStatusEnum.SUCCESS.getCode().equals(orderDTO.getPayStatus())) {
+        if (PayStatusEnum.SUCCESS.getCode().equals(orderMaster.getPayStatus())) {
             try {
                 payService.refund(orderDTO);
             } catch (Exception e) {
-                log.error("【取消订单】退款失败, orderId={}, msg={}", orderDTO.getOrderId(), e.getMessage());
+                log.error("【取消订单】退款失败, orderId={}, msg={}", orderMaster.getOrderId(), e.getMessage());
                 throw new SellException(ResultEnum.ORDER_REFUND_FAIL);
             }
             //标记已退款, 防止 refund 接口对同一单二次退款
+            orderMaster.setPayStatus(PayStatusEnum.REFUND.getCode());
             orderDTO.setPayStatus(PayStatusEnum.REFUND.getCode());
         }
 
-        //修改订单状态
-        orderDTO.setOrderStatus(OrderStatusEnum.CANCEL.getCode());
-        BeanUtils.copyProperties(orderDTO, orderMaster);
+        //修改订单状态 (在锁定实体上改, 仅动状态字段, 避免 copyProperties 覆盖并发写入的其它字段)
+        orderMaster.setOrderStatus(OrderStatusEnum.CANCEL.getCode());
         OrderMaster updateResult = orderMasterRepository.save(orderMaster);
         if (updateResult == null) {
             log.error("【取消订单】更新失败, orderMaster={}", orderMaster);
             throw new SellException(ResultEnum.ORDER_UPDATE_FAIL);
         }
+        orderDTO.setOrderStatus(OrderStatusEnum.CANCEL.getCode());
 
-        //返回库存
+        //返回库存 (取消必为未完结, 货未交付, 应返还)
         List<CartDTO> cartDTOList = orderDTO.getOrderDetailList().stream()
                 .map(e -> new CartDTO(e.getProductId(), e.getProductQuantity()))
                 .collect(Collectors.toList());
         productService.increaseStock(cartDTOList);
         restoreSkuStock(orderDTO);
+        for (OrderDetail d : orderDTO.getOrderDetailList()) {
+            writeStockLedger(1, orderDTO.getOrderId(), d, d.getProductQuantity() == null ? 0 : d.getProductQuantity());
+        }
 
         // WMS 退还原料 (按 BOM 反向入库)
         try { triggerWmsReturn(orderDTO); } catch (Exception e) {
@@ -498,27 +535,30 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderDTO paid(OrderDTO orderDTO) {
+        // 行锁重读: 微信/支付宝可能在短时间内并发回调两次, 串行化避免重复处理. 以锁内最新状态为准.
+        OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderDTO.getOrderId())
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
+
         //判断订单状态
-        if (!orderDTO.getOrderStatus().equals(OrderStatusEnum.NEW.getCode())) {
-            log.error("【订单支付完成】订单状态不正确, orderId={}, orderStatus={}", orderDTO.getOrderId(), orderDTO.getOrderStatus());
+        if (!orderMaster.getOrderStatus().equals(OrderStatusEnum.NEW.getCode())) {
+            log.error("【订单支付完成】订单状态不正确, orderId={}, orderStatus={}", orderMaster.getOrderId(), orderMaster.getOrderStatus());
             throw new SellException(ResultEnum.ORDER_STATUS_ERROR);
         }
 
-        //判断支付状态
-        if (!orderDTO.getPayStatus().equals(PayStatusEnum.WAIT.getCode())) {
-            log.error("【订单支付完成】订单支付状态不正确, orderDTO={}", orderDTO);
+        //判断支付状态 (已是 SUCCESS 说明前一个回调已处理, 直接拦截, 保证幂等)
+        if (!orderMaster.getPayStatus().equals(PayStatusEnum.WAIT.getCode())) {
+            log.error("【订单支付完成】订单支付状态不正确, orderId={}, payStatus={}", orderMaster.getOrderId(), orderMaster.getPayStatus());
             throw new SellException(ResultEnum.ORDER_PAY_STATUS_ERROR);
         }
 
-        //修改支付状态
-        orderDTO.setPayStatus(PayStatusEnum.SUCCESS.getCode());
-        OrderMaster orderMaster = new OrderMaster();
-        BeanUtils.copyProperties(orderDTO, orderMaster);
+        //修改支付状态 (在锁定实体上改)
+        orderMaster.setPayStatus(PayStatusEnum.SUCCESS.getCode());
         OrderMaster updateResult = orderMasterRepository.save(orderMaster);
         if (updateResult == null) {
             log.error("【订单支付完成】更新失败, orderMaster={}", orderMaster);
             throw new SellException(ResultEnum.ORDER_UPDATE_FAIL);
         }
+        orderDTO.setPayStatus(PayStatusEnum.SUCCESS.getCode());
 
         return orderDTO;
     }
@@ -535,17 +575,24 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderDTO refund(OrderDTO orderDTO) {
+        // 行锁重读: 串行化, 防止并发重复退款 + 与 cancel 并发各返还一次库存. 以锁内最新状态为准.
+        OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderDTO.getOrderId())
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
+
         // 已退款的不能重复退款 (订单状态或支付状态任一已标记退款)
-        if (OrderStatusEnum.REFUNDED.getCode().equals(orderDTO.getOrderStatus())
-                || PayStatusEnum.REFUND.getCode().equals(orderDTO.getPayStatus())) {
-            log.error("【订单退款】订单已退款, 不能重复退款, orderId={}", orderDTO.getOrderId());
+        if (OrderStatusEnum.REFUNDED.getCode().equals(orderMaster.getOrderStatus())
+                || PayStatusEnum.REFUND.getCode().equals(orderMaster.getPayStatus())) {
+            log.error("【订单退款】订单已退款, 不能重复退款, orderId={}", orderMaster.getOrderId());
             throw new SellException(ResultEnum.ORDER_STATUS_ERROR);
         }
         // 退款必须基于已支付的订单
-        if (!PayStatusEnum.SUCCESS.getCode().equals(orderDTO.getPayStatus())) {
-            log.error("【订单退款】订单未支付, orderId={}", orderDTO.getOrderId());
+        if (!PayStatusEnum.SUCCESS.getCode().equals(orderMaster.getPayStatus())) {
+            log.error("【订单退款】订单未支付, orderId={}", orderMaster.getOrderId());
             throw new SellException(ResultEnum.ORDER_NOT_PAID);
         }
+
+        // 退款前是否已完结: 已完结=货已交付给顾客, 退款不应再返还库存(否则库存虚高).
+        boolean wasFinished = OrderStatusEnum.FINISHED.getCode().equals(orderMaster.getOrderStatus());
 
         // 调用支付通道退款 —— 失败必须抛出, 让 @Transactional 回滚,
         // 绝不能把没退成功的订单标记为已退款 (否则钱没退、库存却加回, 账实分离)
@@ -553,27 +600,30 @@ public class OrderServiceImpl implements OrderService {
             payService.refund(orderDTO);
         } catch (Exception e) {
             log.error("【订单退款】支付通道退款失败, orderId={}, msg={}",
-                    orderDTO.getOrderId(), e.getMessage());
+                    orderMaster.getOrderId(), e.getMessage());
             throw new SellException(ResultEnum.ORDER_REFUND_FAIL);
         }
 
         // 退款成功后置为已退款 (订单状态 + 支付状态双标记, 防止二次退款)
-        orderDTO.setOrderStatus(OrderStatusEnum.REFUNDED.getCode());
-        orderDTO.setPayStatus(PayStatusEnum.REFUND.getCode());
-        OrderMaster orderMaster = new OrderMaster();
-        BeanUtils.copyProperties(orderDTO, orderMaster);
+        orderMaster.setOrderStatus(OrderStatusEnum.REFUNDED.getCode());
+        orderMaster.setPayStatus(PayStatusEnum.REFUND.getCode());
         OrderMaster updateResult = orderMasterRepository.save(orderMaster);
         if (updateResult == null) {
             throw new SellException(ResultEnum.ORDER_UPDATE_FAIL);
         }
+        orderDTO.setOrderStatus(OrderStatusEnum.REFUNDED.getCode());
+        orderDTO.setPayStatus(PayStatusEnum.REFUND.getCode());
 
-        // 退款时返还库存 (如果订单还未到完结状态)
-        if (!CollectionUtils.isEmpty(orderDTO.getOrderDetailList())) {
+        // 返还库存: 仅当退款前【未完结】(货还没交给顾客). 已完结订单退款不返库存, 避免库存虚高.
+        if (!wasFinished && !CollectionUtils.isEmpty(orderDTO.getOrderDetailList())) {
             List<CartDTO> cartDTOList = orderDTO.getOrderDetailList().stream()
                     .map(e -> new CartDTO(e.getProductId(), e.getProductQuantity()))
                     .collect(Collectors.toList());
             productService.increaseStock(cartDTOList);
             restoreSkuStock(orderDTO);
+            for (OrderDetail d : orderDTO.getOrderDetailList()) {
+                writeStockLedger(1, orderDTO.getOrderId(), d, d.getProductQuantity() == null ? 0 : d.getProductQuantity());
+            }
         }
 
         // WMS 退还原料 (按 BOM 反向入库, 失败不影响退款)
