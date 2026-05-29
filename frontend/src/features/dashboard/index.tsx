@@ -150,7 +150,7 @@ export function Dashboard() {
           <Card className='col-span-1 lg:col-span-3'>
             <CardHeader className='flex flex-row items-center justify-between'>
               <div>
-                <CardTitle className='flex items-center gap-2'>
+                <CardTitle className='flex flex-wrap items-center gap-2'>
                   库存预警
                   {overview?.configured && (
                     <span className='text-muted-foreground text-xs font-normal'>
@@ -158,6 +158,11 @@ export function Dashboard() {
                       <span className='text-destructive font-medium'>
                         {overview.alertCount ?? 0}
                       </span>
+                    </span>
+                  )}
+                  {(overview?.failedCount ?? 0) > 0 && (
+                    <span className='bg-destructive/10 text-destructive rounded px-1.5 py-0.5 text-xs font-medium'>
+                      ⚠ 待处理失败发货 {overview!.failedCount}
                     </span>
                   )}
                 </CardTitle>

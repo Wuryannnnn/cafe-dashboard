@@ -29,6 +29,10 @@ export type WmsOverview = {
   configured: boolean
   itemCount?: number
   alertCount?: number
+  /** 待重试的出库数 (本地补偿队列). */
+  pendingCount?: number
+  /** 重试彻底失败、需人工介入的出库数 (本地与 WMS 已劈叉). */
+  failedCount?: number
 }
 
 export type RecentShipments = {
