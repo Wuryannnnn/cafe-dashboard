@@ -95,8 +95,9 @@ public class MemberServiceImpl implements MemberService {
         r.setAmount(credit);
         r.setBalanceAfter(m.getBalance());
         r.setOperator(operator);
-        r.setRemark(remark != null ? remark : "充值"
-                + (giveAmount != null && giveAmount.signum() > 0 ? " (含赠送 " + giveAmount + ")" : ""));
+        // 修正运算符优先级: 之前 ?: 与 + 结合导致自定义备注会丢掉赠送说明
+        String giveNote = (giveAmount != null && giveAmount.signum() > 0) ? " (含赠送 " + giveAmount + ")" : "";
+        r.setRemark((remark != null ? remark : "充值") + giveNote);
         r.setCreateTime(new Date());
         return balanceRepo.save(r);
     }
@@ -168,7 +169,7 @@ public class MemberServiceImpl implements MemberService {
         PointsRecord r = new PointsRecord();
         r.setMemberId(memberId);
         r.setRecordType(recordType != null ? recordType : 4);
-        r.setPoints(delta);
+        r.setPoints(delta != null ? delta : 0);
         r.setPointsAfter(newPts);
         r.setOrderId(orderId);
         r.setRemark(remark);
@@ -224,7 +225,8 @@ public class MemberServiceImpl implements MemberService {
             boolean countOk = (l.getUpgradeCount() == null)
                     || (member.getSpendCount() != null && member.getSpendCount() >= l.getUpgradeCount());
             if (amountOk && countOk) {
-                if (best == null || (l.getSortOrder() != null && best.getSortOrder() != null && l.getSortOrder() > best.getSortOrder())) {
+                // null 安全比较(空 sortOrder 视为 0), 不再因某一档 sortOrder 为空而漏选更高档
+                if (best == null || sortVal(l) >= sortVal(best)) {
                     best = l;
                 }
             }
@@ -268,5 +270,10 @@ public class MemberServiceImpl implements MemberService {
         Member m = findOne(memberId);
         if (m == null) throw new SellException(1, "会员不存在");
         return m;
+    }
+
+    /** 等级排序值, null 视为 0. */
+    private int sortVal(MemberLevel l) {
+        return l.getSortOrder() == null ? 0 : l.getSortOrder();
     }
 }

@@ -98,16 +98,17 @@ public class CashierServiceImpl implements CashierService {
 
     private OrderDTO markPaidIfFullySettled(OrderDTO orderDTO) {
         BigDecimal paid = paymentRecordRepository.sumByOrderId(orderDTO.getOrderId());
-        if (paid.compareTo(orderDTO.getOrderAmount()) >= 0
-                && PayStatusEnum.WAIT.getCode().equals(orderDTO.getPayStatus())) {
+        // 重新读取订单, 用最新的 payStatus 判断(不用调用方传入的旧值), 避免拆分付款下的
+        // 重复标记/漏标; 只在仍为 WAIT 时 WAIT→SUCCESS 一次, 天然幂等.
+        OrderMaster om = orderMasterRepository.findById(orderDTO.getOrderId()).orElse(null);
+        if (om != null
+                && PayStatusEnum.WAIT.getCode().equals(om.getPayStatus())
+                && paid.compareTo(orderDTO.getOrderAmount()) >= 0) {
             // 直接更新数据库 (不走 orderService.paid 因为它要求 orderStatus = NEW)
-            OrderMaster om = orderMasterRepository.findById(orderDTO.getOrderId()).orElse(null);
-            if (om != null) {
-                om.setPayStatus(PayStatusEnum.SUCCESS.getCode());
-                om.setUpdateTime(new Date());
-                orderMasterRepository.save(om);
-                orderDTO.setPayStatus(PayStatusEnum.SUCCESS.getCode());
-            }
+            om.setPayStatus(PayStatusEnum.SUCCESS.getCode());
+            om.setUpdateTime(new Date());
+            orderMasterRepository.save(om);
+            orderDTO.setPayStatus(PayStatusEnum.SUCCESS.getCode());
         }
         return orderDTO;
     }

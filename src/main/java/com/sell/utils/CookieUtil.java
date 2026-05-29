@@ -26,6 +26,7 @@ public class CookieUtil {
         Cookie cookie = new Cookie(name, value);
         cookie.setPath("/");
         cookie.setMaxAge(maxAge);
+        cookie.setHttpOnly(true); // 防 XSS 读取会话 token
         response.addCookie(cookie);
     }
 
