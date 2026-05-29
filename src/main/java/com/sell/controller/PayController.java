@@ -46,23 +46,34 @@ public class PayController {
             orderDTO = orderService.updatePayType(orderId, effectivePayType);
         }
         boolean isAlipay = effectivePayType != null && effectivePayType.equals(PayTypeEnum.ALIPAY.getCode());
-        PayResponse payResponse = isAlipay ? payService.createAlipay(orderDTO) : payService.create(orderDTO);
         Map<String, Object> r = new HashMap<>();
-        r.put("payType", isAlipay ? "alipay" : "wechat");
-        r.put("appId", payResponse.getAppId());
-        r.put("timeStamp", payResponse.getTimeStamp());
-        r.put("nonceStr", payResponse.getNonceStr());
-        r.put("packAge", payResponse.getPackAge());
-        r.put("paySign", payResponse.getPaySign());
-        r.put("returnUrl", returnUrl);
-        // 支付宝 WAP 跳转地址在 payUri / body, 微信 H5 在 mwebUrl
-        try { r.put("mwebUrl", payResponse.getMwebUrl()); } catch (Throwable ignored) {}
-        try { r.put("codeUrl", payResponse.getCodeUrl()); } catch (Throwable ignored) {}
         try {
-            java.net.URI u = payResponse.getPayUri();
-            if (u != null) r.put("payUri", patchSandboxUrl(u.toString()));
-        } catch (Throwable ignored) {}
-        try { r.put("body", patchSandboxUrl(payResponse.getBody())); } catch (Throwable ignored) {}
+            PayResponse payResponse = isAlipay ? payService.createAlipay(orderDTO) : payService.create(orderDTO);
+            r.put("payType", isAlipay ? "alipay" : "wechat");
+            r.put("appId", payResponse.getAppId());
+            r.put("timeStamp", payResponse.getTimeStamp());
+            r.put("nonceStr", payResponse.getNonceStr());
+            r.put("packAge", payResponse.getPackAge());
+            r.put("paySign", payResponse.getPaySign());
+            r.put("returnUrl", returnUrl);
+            // 支付宝 WAP 跳转地址在 payUri / body, 微信 H5 在 mwebUrl
+            try { r.put("mwebUrl", payResponse.getMwebUrl()); } catch (Throwable ignored) {}
+            try { r.put("codeUrl", payResponse.getCodeUrl()); } catch (Throwable ignored) {}
+            try {
+                java.net.URI u = payResponse.getPayUri();
+                if (u != null) r.put("payUri", patchSandboxUrl(u.toString()));
+            } catch (Throwable ignored) {}
+            try { r.put("body", patchSandboxUrl(payResponse.getBody())); } catch (Throwable ignored) {}
+        } catch (Exception e) {
+            // 支付网关发起失败(最常见: 商户凭据未配置/格式错误). 返回可读 {code,msg} 而不是 500,
+            // 让前端 pay 页显示具体原因(否则只会显示"后端无返回"). 详细栈进日志.
+            log.error("【发起支付】失败 orderId={}, payType={}: {}", orderId, effectivePayType, e.getMessage());
+            String reason = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            if (reason.length() > 160) reason = reason.substring(0, 160);
+            r.clear();
+            r.put("code", -1);
+            r.put("msg", "支付发起失败: " + reason);
+        }
         return r;
     }
 

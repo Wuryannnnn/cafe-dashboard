@@ -29,19 +29,21 @@ spring:
     default-property-inclusion: non_null
 
 wechat:
-  mpAppId: test
-  mpAppSecret: test
-  openAppId: test
-  openAppSecret: test
-  mchId: test
-  mchKey: test
-  keyPath:
-  notifyUrl: ${WECHAT_NOTIFY_URL:http://localhost:8080/sell/pay/notify}
+  # 生产凭据全部走环境变量; 未设置=空(表示"未接入支付"), 而不是 "test" 占位
+  # (占位值会让微信返回 "mch_id参数格式错误", 误导排查). 接入说明见 doc/支付接入说明.md
+  mpAppId: ${WECHAT_MP_APPID:}
+  mpAppSecret: ${WECHAT_MP_APPSECRET:}
+  openAppId: ${WECHAT_OPEN_APPID:}
+  openAppSecret: ${WECHAT_OPEN_APPSECRET:}
+  mchId: ${WECHAT_MCH_ID:}
+  mchKey: ${WECHAT_MCH_KEY:}
+  keyPath: ${WECHAT_KEY_PATH:}
+  notifyUrl: ${WECHAT_NOTIFY_URL:}
   templateId:
-    orderStatus: test
+    orderStatus: ${WECHAT_TPL_ORDER_STATUS:}
 
 alipay:
-  sandbox: true
+  sandbox: ${ALIPAY_SANDBOX:false}   # 生产默认关沙箱(真实扣款)
   appId: ${ALIPAY_APP_ID:}
   privateKey: ${ALIPAY_PRIVATE_KEY:}
   aliPayPublicKey: ${ALIPAY_PUBLIC_KEY:}
@@ -49,9 +51,10 @@ alipay:
   returnUrl: ${ALIPAY_RETURN_URL:}
 
 projectUrl:
-  wechatMpAuthorize: http://localhost:8080
-  wechatOpenAuthorize: http://localhost:8080
-  sell: http://localhost:8080
+  # 必须是公网可达的域名, 否则微信/支付宝回调不到, 订单不会变"已支付"
+  wechatMpAuthorize: ${PROJECT_URL:http://localhost:8080}
+  wechatOpenAuthorize: ${PROJECT_URL:http://localhost:8080}
+  sell: ${PROJECT_URL:http://localhost:8080}
 
 logging:
   level:
