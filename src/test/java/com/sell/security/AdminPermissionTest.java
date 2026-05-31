@@ -53,6 +53,17 @@ public class AdminPermissionTest {
         assertTrue(AdminPermission.allowed(2, "POST", "/seller/cashier/offline"));
         assertTrue(AdminPermission.allowed(2, "POST", "/seller/member/recharge"));
         assertTrue(AdminPermission.allowed(2, "POST", "/api/admin/members"));
+        // React 收银台 JSON 接口 (手动建单/订单操作/组合收款)
+        assertTrue(AdminPermission.allowed(2, "POST", "/api/admin/cashier/manual-order"));
+        assertTrue(AdminPermission.allowed(2, "POST", "/api/admin/orders/x/refund"));
+        assertTrue(AdminPermission.allowed(2, "POST", "/api/admin/orders/x/discount"));
+    }
+
+    @Test
+    public void maker_blockedFromCashierManualOrder() {
+        // 制作员不做收银, /api/admin/cashier 应拒绝(但订单状态变更仍放行)
+        assertFalse(AdminPermission.allowed(3, "POST", "/api/admin/cashier/manual-order"));
+        assertTrue(AdminPermission.allowed(3, "POST", "/api/admin/orders/x/making"));
     }
 
     @Test

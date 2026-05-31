@@ -29,7 +29,7 @@ public final class AdminPermission {
 
     /** 收银员全权 (任意方法). */
     private static final String[] CASHIER_FULL = {
-            "/api/admin/orders", "/seller/order", "/seller/cashier",
+            "/api/admin/orders", "/seller/order", "/seller/cashier", "/api/admin/cashier",
             "/api/admin/members", "/seller/member",
             "/seller/printer", "/seller/printSettings", "/seller/qrcode"
     };
