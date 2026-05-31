@@ -519,10 +519,18 @@ public class ApiAdminController {
             if (r.getRecordType() != null && r.getRecordType() == 1) income = income.add(r.getAmount() == null ? java.math.BigDecimal.ZERO : r.getAmount());
             else expense = expense.add(r.getAmount() == null ? java.math.BigDecimal.ZERO : r.getAmount());
         }
+        // 营业收入: 本月已支付订单总额 (PRD 9.5 财务报表需"营业收入 vs 日常支出对比")
+        java.util.Date mStart = java.util.Date.from(first.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+        java.util.Date mEnd = java.util.Date.from(first.plusMonths(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+        java.math.BigDecimal orderRevenue = orderMasterRepository.sumAmountByDateRange(mStart, mEnd);
+        if (orderRevenue == null) orderRevenue = java.math.BigDecimal.ZERO;
+
         Map<String, Object> r = new HashMap<>();
-        r.put("monthIncome", income);
-        r.put("monthExpense", expense);
-        r.put("monthBalance", income.subtract(expense));
+        r.put("monthOrderRevenue", orderRevenue);        // 营业收入(订单)
+        r.put("monthIncome", income);                    // 其他收入(手动记账)
+        r.put("monthExpense", expense);                  // 日常支出
+        r.put("monthBalance", income.subtract(expense)); // 兼容旧字段(其他收支结余)
+        r.put("monthNet", orderRevenue.add(income).subtract(expense)); // 净利 = 营业收入+其他收入-支出
         return r;
     }
 }
