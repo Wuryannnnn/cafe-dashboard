@@ -296,6 +296,14 @@ public class ApiAdminController {
         return memberRepository.findAll(Sort.by(Sort.Direction.DESC, "registerTime"));
     }
 
+    @Autowired private com.sell.service.MemberService memberService;
+
+    /** 会员概览看板: 总会员 / 本周新增 / 活跃 / 储值总余额 (PRD 8.1). */
+    @GetMapping("/member-overview")
+    public Map<String, Object> memberOverview() {
+        return memberService.overview();
+    }
+
     @GetMapping("/member-levels")
     public List<MemberLevel> memberLevels() {
         return memberLevelRepository.findAll(Sort.by("sortOrder"));

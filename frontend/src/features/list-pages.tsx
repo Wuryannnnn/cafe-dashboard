@@ -76,10 +76,20 @@ function EditDel({
 
 export function MembersPage() {
   const qc = useQueryClient()
-  const refetch = () => qc.invalidateQueries({ queryKey: ['members'] })
+  const refetch = () => {
+    qc.invalidateQueries({ queryKey: ['members'] })
+    qc.invalidateQueries({ queryKey: ['member-overview'] })
+  }
   const { data, isLoading } = useQuery({
     queryKey: ['members'],
     queryFn: async () => (await api.get<any[]>('/api/admin/members')).data,
+  })
+  const { data: ov } = useQuery({
+    queryKey: ['member-overview'],
+    queryFn: async () =>
+      (await api.get<{ totalMembers: number; newMembersThisWeek: number; activeMembers: number; totalBalance: number }>(
+        '/api/admin/member-overview'
+      )).data,
   })
   const { data: levels } = useQuery({
     queryKey: ['member-levels'],
@@ -104,6 +114,12 @@ export function MembersPage() {
       title={<>会员 <span className='text-muted-foreground ms-2 text-base font-normal'>共 {data?.length ?? 0} 人</span></>}
       actions={<CreateBtn title='会员' postUrl='/seller/member/save' fields={memberFields} onSaved={refetch} />}
     >
+      <div className='mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+        <StatBox label='总会员' value={`${ov?.totalMembers ?? 0}`} variant='balance' />
+        <StatBox label='本周新增' value={`${ov?.newMembersThisWeek ?? 0}`} variant='income' />
+        <StatBox label='活跃会员' value={`${ov?.activeMembers ?? 0}`} variant='income' />
+        <StatBox label='储值总余额' value={`¥ ${ov?.totalBalance ?? 0}`} variant='balance' />
+      </div>
       <SimpleTable
         loading={isLoading}
         rows={data}
