@@ -7,7 +7,9 @@ spring:
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   datasource:
     driver-class-name: org.h2.Driver
-    url: jdbc:h2:mem:sell;DB_CLOSE_DELAY=-1;MODE=MySQL;INIT=DROP ALL OBJECTS
+    # 注: 不要加 INIT=DROP ALL OBJECTS —— 它会在每次新建物理连接时 DROP 整个 schema,
+    # 连接池开第二条连接时就会清空表, 导致后续测试随机报 "table not found"(与连接时序相关的偶发失败).
+    url: jdbc:h2:mem:sell;DB_CLOSE_DELAY=-1;MODE=MySQL
     username: sa
     password:
   jpa:
@@ -20,6 +22,9 @@ spring:
     init:
       mode: always
       data-locations: classpath:data-local.sql,classpath:seed_meituan_products.sql
+      # 多个 Spring 测试上下文会各自重跑一次种子脚本(共享同一 mem 库), 重复 INSERT 会撞主键.
+      # 与 prod 一致开 continue-on-error, 让重复种子被忽略(替代原来用 INIT=DROP 清库的脆弱做法).
+      continue-on-error: true
   h2:
     console:
       enabled: true
