@@ -481,20 +481,21 @@ public class ApiAdminController {
         return r;
     }
 
+    @Autowired private com.sell.service.ReportService reportService;
+
     @GetMapping("/reports/payments")
     public Map<String, Object> reportsPayments(@RequestParam(value = "days", defaultValue = "30") int days) {
         java.time.LocalDate end = java.time.LocalDate.now();
         java.time.LocalDate start = end.minusDays(days - 1);
         java.util.Date startD = java.util.Date.from(start.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
         java.util.Date endD = java.util.Date.from(end.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
-        java.util.List<Object[]> data = orderMasterRepository.sumByPayType(startD, endD);
+        // 用实际收款方式口径(含现金/会员卡), 而非 OrderMaster.payType(只有微信/支付宝)
         java.util.List<Map<String, Object>> rows = new java.util.ArrayList<>();
-        for (Object[] row : data) {
+        for (Map<String, Object> s : reportService.paymentMethodStats(startD, endD)) {
             Map<String, Object> m = new HashMap<>();
-            Integer payType = (Integer) row[0];
-            m.put("name", payType != null && payType == 1 ? "支付宝" : "微信支付");
-            m.put("count", row[1]);
-            m.put("amount", row[2]);
+            m.put("name", s.get("methodName"));
+            m.put("count", s.get("count"));
+            m.put("amount", s.get("amount"));
             rows.add(m);
         }
         Map<String, Object> r = new HashMap<>();
