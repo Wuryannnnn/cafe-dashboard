@@ -83,6 +83,9 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private com.sell.repository.StockRecordRepository stockRecordRepository;
 
+    @Autowired
+    private com.sell.repository.OrderPaymentRecordRepository orderPaymentRecordRepository;
+
     /**
      * 记一条库存流水 (订单消耗/返还), 关联 orderId 便于对账.
      * recordType: 2=出库(下单消耗), 1=入库(取消/退款返还). delta 为带符号变动量.
@@ -630,14 +633,23 @@ public class OrderServiceImpl implements OrderService {
         // 退款前是否已完结: 已完结=货已交付给顾客, 退款不应再返还库存(否则库存虚高).
         boolean wasFinished = OrderStatusEnum.FINISHED.getCode().equals(orderMaster.getOrderStatus());
 
-        // 调用支付通道退款 —— 失败必须抛出, 让 @Transactional 回滚,
-        // 绝不能把没退成功的订单标记为已退款 (否则钱没退、库存却加回, 账实分离)
-        try {
-            payService.refund(orderDTO);
-        } catch (Exception e) {
-            log.error("【订单退款】支付通道退款失败, orderId={}, msg={}",
-                    orderMaster.getOrderId(), e.getMessage());
-            throw new SellException(ResultEnum.ORDER_REFUND_FAIL);
+        // 线下(现金/会员余额)收款 vs 线上(微信/支付宝)网关收款, 退款路径不同:
+        // - 有收款流水 OrderPaymentRecord = 收银台线下收的款 → 退现金/退回余额是收银员人工动作,
+        //   系统侧不调支付网关(否则没真实交易可退、必然报错, 退款按钮对现金单永远失败)
+        // - 无收款流水 = 线上网关收的款 → 调网关原路退款, 失败必须抛出回滚(钱没退绝不能标记已退款)
+        boolean offlinePaid = !orderPaymentRecordRepository
+                .findByOrderIdOrderByPaymentIdAsc(orderMaster.getOrderId()).isEmpty();
+        if (!offlinePaid) {
+            try {
+                payService.refund(orderDTO);
+            } catch (Exception e) {
+                log.error("【订单退款】支付通道退款失败, orderId={}, msg={}",
+                        orderMaster.getOrderId(), e.getMessage());
+                throw new SellException(ResultEnum.ORDER_REFUND_FAIL);
+            }
+        } else {
+            log.info("【订单退款】线下收款订单, 系统侧标记退款(现金/余额由收银员人工退还), orderId={}",
+                    orderMaster.getOrderId());
         }
 
         // 退款成功后置为已退款 (订单状态 + 支付状态双标记, 防止二次退款)
