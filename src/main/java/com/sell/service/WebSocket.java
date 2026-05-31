@@ -42,11 +42,20 @@ public class WebSocket {
 
     public void sendMessage(String message) {
         for (WebSocket webSocket: webSocketSet) {
-            log.info("【websocket消息】广播消息, message={}", message);
+            Session s = webSocket.session;
+            if (s == null || !s.isOpen()) {
+                webSocketSet.remove(webSocket); // 清理已关闭/无效会话
+                continue;
+            }
             try {
-                webSocket.session.getBasicRemote().sendText(message);
+                // getBasicRemote() 是同步的, 同一 session 并发调用会抛 IllegalStateException;
+                // 按 session 加锁串行化发送
+                synchronized (s) {
+                    s.getBasicRemote().sendText(message);
+                }
             } catch (Exception e) {
-                e.printStackTrace();
+                log.warn("【websocket消息】发送失败, 移除会话: {}", e.getMessage());
+                webSocketSet.remove(webSocket);
             }
         }
     }

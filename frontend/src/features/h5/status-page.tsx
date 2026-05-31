@@ -30,11 +30,12 @@ export function H5StatusPage() {
       const r = await api.get<{ code: number; data: any }>(`/buyer/order/status?orderId=${orderId}`)
       return r.data.code === 0 ? r.data.data : null
     },
-    // 订单完成 / 取消后停止轮询
+    // 仅在确实拿到"已完成/已取消"(orderStatus>=3)时停止轮询;
+    // data 暂时为 null(某次请求瞬时失败)时继续轮询, 避免一次抖动就永久停掉
     refetchInterval: (q: any) => {
       const d = q.state?.data
-      if (!d) return false
-      return d.orderStatus >= 3 ? false : 5000
+      if (d && d.orderStatus >= 3) return false
+      return 5000
     },
     enabled: !!orderId,
     retry: false,

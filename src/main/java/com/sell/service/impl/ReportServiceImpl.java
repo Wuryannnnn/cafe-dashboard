@@ -3,7 +3,6 @@ package com.sell.service.impl;
 import com.sell.dataobject.OrderMaster;
 import com.sell.dataobject.ProductCategory;
 import com.sell.dataobject.ProductInfo;
-import com.sell.enums.OrderStatusEnum;
 import com.sell.enums.PayTypeEnum;
 import com.sell.repository.OrderDetailRepository;
 import com.sell.repository.OrderMasterRepository;
@@ -37,11 +36,13 @@ public class ReportServiceImpl implements ReportService {
     @Autowired
     private ProductCategoryRepository categoryRepository;
 
+    @Autowired
+    private com.sell.repository.OrderPaymentRecordRepository orderPaymentRecordRepository;
+
     @Override
     public List<OrderMaster> findValidOrders(Date start, Date end) {
-        return orderMasterRepository.findByDateRange(start, end).stream()
-                .filter(o -> !OrderStatusEnum.REFUNDED.getCode().equals(o.getOrderStatus()))
-                .collect(Collectors.toList());
+        // findByDateRange 已按 payStatus=1 过滤(排除未支付/已退款), 与 totals() 完全同口径, 直接返回即可
+        return orderMasterRepository.findByDateRange(start, end);
     }
 
     @Override
@@ -166,13 +167,13 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public List<Map<String, Object>> paymentMethodStats(Date start, Date end) {
-        List<Object[]> rows = orderMasterRepository.sumByPayType(start, end);
+        // 按实际收款方式(OrderPaymentRecord.methodName)统计: 覆盖现金/会员卡/微信/支付宝等全部方式,
+        // 排除已退款订单. 原来用 OrderMaster.payType 只能区分微信/支付宝, 漏掉现金与会员余额收款.
+        List<Object[]> rows = orderPaymentRecordRepository.sumByMethodName(start, end);
         List<Map<String, Object>> result = new ArrayList<>();
         for (Object[] r : rows) {
-            Integer code = (Integer) r[0];
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("methodCode", code);
-            m.put("methodName", code != null && code == PayTypeEnum.ALIPAY.getCode() ? "支付宝" : "微信支付");
+            m.put("methodName", r[0] != null ? r[0] : "未知");
             m.put("count", r[1]);
             m.put("amount", r[2]);
             result.add(m);

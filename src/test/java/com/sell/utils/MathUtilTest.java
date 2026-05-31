@@ -29,4 +29,12 @@ public class MathUtilTest {
         assertTrue(MathUtil.equals(-1.0, -1.0));
         assertFalse(MathUtil.equals(-1.0, 1.0));
     }
+
+    @Test
+    public void equals_nullSafe() {
+        // 支付回调金额可能为 null, 应返回 false 而非抛 NPE
+        assertFalse(MathUtil.equals(null, 1.0));
+        assertFalse(MathUtil.equals(1.0, null));
+        assertFalse(MathUtil.equals(null, null));
+    }
 }

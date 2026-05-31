@@ -1,6 +1,7 @@
 package com.sell.service.impl;
 
 import com.sell.dto.OrderDTO;
+import com.sell.enums.PayStatusEnum;
 import com.sell.enums.PayTypeEnum;
 import com.sell.enums.ResultEnum;
 import com.sell.exception.SellException;
@@ -74,6 +75,12 @@ public class PayServiceImpl implements PayService {
             throw new SellException(ResultEnum.ORDER_NOT_EXIST);
         }
 
+        //幂等: 订单已支付时重复通知直接返回, 不再重复标记(否则 paid() 会抛异常导致微信收不到 SUCCESS 而无限重试)
+        if (PayStatusEnum.SUCCESS.getCode().equals(orderDTO.getPayStatus())) {
+            log.info("【微信支付】异步通知, 订单已支付, 幂等跳过, orderId={}", payResponse.getOrderId());
+            return payResponse;
+        }
+
         //判断金额是否一致
         if (!MathUtil.equals(payResponse.getOrderAmount(), orderDTO.getOrderAmount().doubleValue())) {
             log.error("【微信支付】异步通知, 订单金额不一致, orderId={}, 微信通知金额={}, 系统金额={}",
@@ -96,6 +103,12 @@ public class PayServiceImpl implements PayService {
         if (orderDTO == null) {
             log.error("【支付宝支付】异步通知, 订单不存在, orderId={}", payResponse.getOrderId());
             throw new SellException(ResultEnum.ORDER_NOT_EXIST);
+        }
+
+        //幂等: 已支付订单的重复通知直接返回
+        if (PayStatusEnum.SUCCESS.getCode().equals(orderDTO.getPayStatus())) {
+            log.info("【支付宝支付】异步通知, 订单已支付, 幂等跳过, orderId={}", payResponse.getOrderId());
+            return payResponse;
         }
 
         if (!MathUtil.equals(payResponse.getOrderAmount(), orderDTO.getOrderAmount().doubleValue())) {

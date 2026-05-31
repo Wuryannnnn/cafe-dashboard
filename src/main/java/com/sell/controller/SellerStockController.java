@@ -12,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 
@@ -66,8 +67,9 @@ public class SellerStockController {
         return new ModelAndView("stock/list", map);
     }
 
-    /** 商品级调整 (无 SKU 时使用). */
+    /** 商品级调整 (无 SKU 时使用). 原子更新 + 同事务写流水, 避免并发"读-改-写"丢失更新、库存与流水劈叉. */
     @PostMapping("/adjust")
+    @Transactional
     public ModelAndView adjust(@RequestParam("productId") String productId,
                                @RequestParam("delta") Integer delta,
                                @RequestParam(value = "remark", required = false) String remark,
@@ -75,25 +77,21 @@ public class SellerStockController {
                                Map<String, Object> mapModel) {
         ProductInfo p = productRepo.findById(productId).orElse(null);
         if (p == null) {
-            mapModel.put("msg", "商品不存在");
-            mapModel.put("url", "/sell/seller/stock/list");
-            return new ModelAndView("common/error", mapModel);
+            return err(mapModel, "商品不存在");
         }
-        int newStock = (p.getProductStock() == null ? 0 : p.getProductStock()) + delta;
-        if (newStock < 0) {
-            mapModel.put("msg", "调整后库存不能 < 0");
-            mapModel.put("url", "/sell/seller/stock/list");
-            return new ModelAndView("common/error", mapModel);
+        // 原子调整: 仅当调整后不为负才更新; 0 行表示会变负
+        if (productRepo.adjustStockAtomic(productId, delta) == 0) {
+            return err(mapModel, "调整后库存不能 < 0");
         }
-        p.setProductStock(newStock);
-        productRepo.save(p);
-        recordRepo.save(buildRecord(recordType, p.getProductId(), p.getProductName(), null, null, delta, newStock, remark));
+        Integer after = productRepo.findById(productId).map(ProductInfo::getProductStock).orElse(0);
+        recordRepo.save(buildRecord(recordType, productId, p.getProductName(), null, null, delta, after == null ? 0 : after, remark));
         mapModel.put("url", "/sell/seller/stock/list");
         return new ModelAndView("common/success", mapModel);
     }
 
-    /** SKU 级调整. */
+    /** SKU 级调整. 原子更新 + 联动商品级库存(保持"商品级=各SKU之和"一致) + 同事务写流水. */
     @PostMapping("/adjustSku")
+    @Transactional
     public ModelAndView adjustSku(@RequestParam("skuId") String skuId,
                                   @RequestParam("delta") Integer delta,
                                   @RequestParam(value = "remark", required = false) String remark,
@@ -101,24 +99,29 @@ public class SellerStockController {
                                   Map<String, Object> mapModel) {
         ProductSku s = skuRepo.findById(skuId).orElse(null);
         if (s == null) {
-            mapModel.put("msg", "规格不存在");
-            mapModel.put("url", "/sell/seller/stock/list");
-            return new ModelAndView("common/error", mapModel);
+            return err(mapModel, "规格不存在");
         }
-        int newStock = (s.getSkuStock() == null ? 0 : s.getSkuStock()) + delta;
-        if (newStock < 0) {
-            mapModel.put("msg", "调整后库存不能 < 0");
-            mapModel.put("url", "/sell/seller/stock/list");
-            return new ModelAndView("common/error", mapModel);
+        // 原子调整 SKU 库存
+        if (skuRepo.adjustSkuStockAtomic(skuId, delta) == 0) {
+            return err(mapModel, "调整后库存不能 < 0");
         }
-        s.setSkuStock(newStock);
-        skuRepo.save(s);
+        // 两层联动: 把同样的 delta 同步到商品级库存, 保持两层不漂移,
+        // 也避免商品级库存为 0/空时把该 SKU 的下单挡住(下单要先过商品级原子扣减).
+        // delta 为负且商品级不足时原子更新返回 0(不更新、不会变负), 属可接受的轻微偏差.
+        productRepo.adjustStockAtomic(s.getProductId(), delta);
+        Integer skuAfter = skuRepo.findById(skuId).map(ProductSku::getSkuStock).orElse(0);
         ProductInfo p = productRepo.findById(s.getProductId()).orElse(null);
         recordRepo.save(buildRecord(recordType, s.getProductId(),
                 p != null ? p.getProductName() : "",
-                s.getSkuId(), s.getSkuName(), delta, newStock, remark));
+                s.getSkuId(), s.getSkuName(), delta, skuAfter == null ? 0 : skuAfter, remark));
         mapModel.put("url", "/sell/seller/stock/list");
         return new ModelAndView("common/success", mapModel);
+    }
+
+    private ModelAndView err(Map<String, Object> mapModel, String msg) {
+        mapModel.put("msg", msg);
+        mapModel.put("url", "/sell/seller/stock/list");
+        return new ModelAndView("common/error", mapModel);
     }
 
     /** 单商品库存历史. */

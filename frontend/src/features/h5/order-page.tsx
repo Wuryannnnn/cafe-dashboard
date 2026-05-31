@@ -47,6 +47,7 @@ export function H5OrderPage() {
   const [pickupNumber, setPickupNumber] = useState<string | null>(null)
   const [lastOrderId, setLastOrderId] = useState<string | null>(null)
   const [bannerIdx, setBannerIdx] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
   const isSnappingRef = useRef(false)
 
   const { data: cfg } = useQuery({
@@ -147,7 +148,9 @@ export function H5OrderPage() {
   }
 
   const submit = async () => {
-    if (cart.length === 0) return
+    // 防重: 提交中再次点击直接忽略, 避免重复下单
+    if (submitting || cart.length === 0) return
+    setSubmitting(true)
     const items = cart.map((c) => ({
       productId: c.productId,
       productQuantity: c.quantity,
@@ -181,10 +184,13 @@ export function H5OrderPage() {
         setCart([])
         setCartOpen(false)
       } else {
-        alert('下单失败: ' + r.data.msg)
+        alert('下单失败: ' + (r.data.msg || ''))
       }
-    } catch (e) {
-      alert('网络错误')
+    } catch (e: any) {
+      // 后端业务错误(如库存不足)会带 {code,msg}, 优先展示具体原因
+      alert(e?.response?.data?.msg || '网络错误, 请重试')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -335,7 +341,7 @@ export function H5OrderPage() {
       <CartBar
         count={totalCount}
         amount={totalAmount}
-        canCheckout={cart.length > 0}
+        canCheckout={cart.length > 0 && !submitting}
         onCartClick={() => setCartOpen(!cartOpen)}
         onCheckout={submit}
       />

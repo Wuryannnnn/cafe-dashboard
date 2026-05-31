@@ -1,5 +1,6 @@
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth-store'
+import { api } from '@/lib/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 
 interface SignOutDialogProps {
@@ -12,7 +13,13 @@ export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
   const location = useLocation()
   const { auth } = useAuthStore()
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    // 通知后端注销令牌 (失败也继续清理本地状态)
+    try {
+      await api.post('/api/admin/logout')
+    } catch {
+      /* ignore */
+    }
     auth.reset()
     // Preserve current location for redirect after sign-in
     const currentPath = location.href

@@ -51,6 +51,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -128,6 +129,110 @@ public class ApiAdminController {
     @GetMapping("/orders/{orderId}")
     public OrderDTO orderDetail(@PathVariable("orderId") String orderId) {
         return orderService.findOne(orderId);
+    }
+
+    /* ===== 订单操作 (PRD 6.3 / 7.3) —— React 后台用, 统一返回 {code,msg}; 业务失败 code=-1 ===== */
+
+    @Autowired private com.sell.service.CashierService cashierService;
+
+    private Map<String, Object> ok(String msg) {
+        Map<String, Object> r = new HashMap<>();
+        r.put("code", 0);
+        r.put("msg", msg);
+        return r;
+    }
+
+    private Map<String, Object> fail(Exception e) {
+        Map<String, Object> r = new HashMap<>();
+        r.put("code", -1);
+        r.put("msg", e.getMessage() != null ? e.getMessage() : "操作失败");
+        return r;
+    }
+
+    @PostMapping("/orders/{orderId}/making")
+    public Map<String, Object> orderMaking(@PathVariable("orderId") String orderId) {
+        try { orderService.making(orderService.findOne(orderId)); return ok("已接单, 开始制作"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    @PostMapping("/orders/{orderId}/ready")
+    public Map<String, Object> orderReady(@PathVariable("orderId") String orderId) {
+        try { orderService.ready(orderService.findOne(orderId)); return ok("已标记待取餐"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    @PostMapping("/orders/{orderId}/finish")
+    public Map<String, Object> orderFinish(@PathVariable("orderId") String orderId) {
+        try { orderService.finish(orderService.findOne(orderId)); return ok("订单已完结"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    @PostMapping("/orders/{orderId}/cancel")
+    public Map<String, Object> orderCancel(@PathVariable("orderId") String orderId) {
+        try { orderService.cancel(orderService.findOne(orderId)); return ok("订单已取消"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    @PostMapping("/orders/{orderId}/refund")
+    public Map<String, Object> orderRefund(@PathVariable("orderId") String orderId) {
+        try { orderService.refund(orderService.findOne(orderId)); return ok("退款成功"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    @PostMapping("/orders/{orderId}/free")
+    public Map<String, Object> orderFree(@PathVariable("orderId") String orderId) {
+        try { orderService.freeOrder(orderId); return ok("已免单"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    @PostMapping("/orders/{orderId}/amount")
+    public Map<String, Object> orderAmount(@PathVariable("orderId") String orderId,
+                                           @RequestParam("newAmount") java.math.BigDecimal newAmount) {
+        try { orderService.updateAmount(orderId, newAmount); return ok("改价成功"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    @PostMapping("/orders/{orderId}/discount")
+    public Map<String, Object> orderDiscount(@PathVariable("orderId") String orderId,
+                                             @RequestParam("discountRate") int discountRate) {
+        try { orderService.applyDiscount(orderId, discountRate); return ok("打折成功"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    /* ===== 收银台: 手动建单 / 组合(分笔)收款 ===== */
+
+    @PostMapping("/cashier/manual-order")
+    public Map<String, Object> manualOrder(@RequestParam(value = "tableId", required = false) Integer tableId,
+                                           @RequestParam("items") String items) {
+        try {
+            OrderDTO d = cashierService.manualCreateOrder(tableId, items, "cashier");
+            Map<String, Object> r = ok("已创建订单");
+            r.put("orderId", d.getOrderId());
+            return r;
+        } catch (Exception e) { return fail(e); }
+    }
+
+    /** 整单一次性收款 (单一支付方式). */
+    @PostMapping("/cashier/offline-pay")
+    public Map<String, Object> offlinePay(@RequestParam("orderId") String orderId,
+                                          @RequestParam("methodId") Integer methodId) {
+        try { cashierService.offlinePay(orderId, methodId, "cashier"); return ok("收款成功"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    /** 组合收款: 记一笔指定金额的付款, 累计达到订单金额自动结清. */
+    @PostMapping("/cashier/pay-record")
+    public Map<String, Object> payRecord(@RequestParam("orderId") String orderId,
+                                         @RequestParam("methodId") Integer methodId,
+                                         @RequestParam("amount") java.math.BigDecimal amount) {
+        try { cashierService.addPaymentRecord(orderId, methodId, amount, "cashier"); return ok("已记一笔收款"); }
+        catch (Exception e) { return fail(e); }
+    }
+
+    /** 某订单的收款流水 (组合收款用). */
+    @GetMapping("/cashier/payments")
+    public List<com.sell.dataobject.OrderPaymentRecord> cashierPayments(@RequestParam("orderId") String orderId) {
+        return cashierService.findPaymentsByOrder(orderId);
     }
 
     /** WMS 同步失败队列. */
@@ -376,20 +481,21 @@ public class ApiAdminController {
         return r;
     }
 
+    @Autowired private com.sell.service.ReportService reportService;
+
     @GetMapping("/reports/payments")
     public Map<String, Object> reportsPayments(@RequestParam(value = "days", defaultValue = "30") int days) {
         java.time.LocalDate end = java.time.LocalDate.now();
         java.time.LocalDate start = end.minusDays(days - 1);
         java.util.Date startD = java.util.Date.from(start.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
         java.util.Date endD = java.util.Date.from(end.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
-        java.util.List<Object[]> data = orderMasterRepository.sumByPayType(startD, endD);
+        // 用实际收款方式口径(含现金/会员卡), 而非 OrderMaster.payType(只有微信/支付宝)
         java.util.List<Map<String, Object>> rows = new java.util.ArrayList<>();
-        for (Object[] row : data) {
+        for (Map<String, Object> s : reportService.paymentMethodStats(startD, endD)) {
             Map<String, Object> m = new HashMap<>();
-            Integer payType = (Integer) row[0];
-            m.put("name", payType != null && payType == 1 ? "支付宝" : "微信支付");
-            m.put("count", row[1]);
-            m.put("amount", row[2]);
+            m.put("name", s.get("methodName"));
+            m.put("count", s.get("count"));
+            m.put("amount", s.get("amount"));
             rows.add(m);
         }
         Map<String, Object> r = new HashMap<>();
@@ -413,10 +519,18 @@ public class ApiAdminController {
             if (r.getRecordType() != null && r.getRecordType() == 1) income = income.add(r.getAmount() == null ? java.math.BigDecimal.ZERO : r.getAmount());
             else expense = expense.add(r.getAmount() == null ? java.math.BigDecimal.ZERO : r.getAmount());
         }
+        // 营业收入: 本月已支付订单总额 (PRD 9.5 财务报表需"营业收入 vs 日常支出对比")
+        java.util.Date mStart = java.util.Date.from(first.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+        java.util.Date mEnd = java.util.Date.from(first.plusMonths(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+        java.math.BigDecimal orderRevenue = orderMasterRepository.sumAmountByDateRange(mStart, mEnd);
+        if (orderRevenue == null) orderRevenue = java.math.BigDecimal.ZERO;
+
         Map<String, Object> r = new HashMap<>();
-        r.put("monthIncome", income);
-        r.put("monthExpense", expense);
-        r.put("monthBalance", income.subtract(expense));
+        r.put("monthOrderRevenue", orderRevenue);        // 营业收入(订单)
+        r.put("monthIncome", income);                    // 其他收入(手动记账)
+        r.put("monthExpense", expense);                  // 日常支出
+        r.put("monthBalance", income.subtract(expense)); // 兼容旧字段(其他收支结余)
+        r.put("monthNet", orderRevenue.add(income).subtract(expense)); // 净利 = 营业收入+其他收入-支出
         return r;
     }
 }

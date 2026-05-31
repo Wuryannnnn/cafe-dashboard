@@ -5,3 +5,9 @@ spring:
     suffix: .ftl
     settings:
       number_format: "0.##"
+
+# 后台鉴权开关. true=对 /api/admin/** 与 /seller/** 强制登录校验 (前端已接入登录).
+# 如需临时关闭(例如本地联调), 改为 false 即可.
+admin:
+  auth:
+    enabled: true

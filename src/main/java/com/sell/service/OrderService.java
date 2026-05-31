@@ -42,6 +42,9 @@ public interface OrderService {
     /** 改价 (修改订单金额). */
     OrderDTO updateAmount(String orderId, java.math.BigDecimal newAmount);
 
+    /** 更新支付方式 (支付页临时切换微信/支付宝时持久化, 否则退款会走错渠道). 已支付订单保持原渠道不变. */
+    OrderDTO updatePayType(String orderId, Integer payType);
+
     /** 打折 (按折扣率, 0~100, 例如 80=8折). */
     OrderDTO applyDiscount(String orderId, int discountRate);
 

@@ -19,9 +19,13 @@ export function handleServerError(error: unknown) {
   }
 
   if (error instanceof AxiosError) {
-    const title = error.response?.data?.title
-    if (typeof title === 'string' && title.length > 0) {
-      errMsg = title
+    // 后端统一返回 ResultVO { code, msg, data }; 兼容 message/title 字段
+    const data = error.response?.data as
+      | { msg?: string; message?: string; title?: string }
+      | undefined
+    const serverMsg = data?.msg ?? data?.message ?? data?.title
+    if (typeof serverMsg === 'string' && serverMsg.length > 0) {
+      errMsg = serverMsg
     }
   }
 

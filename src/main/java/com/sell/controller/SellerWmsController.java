@@ -1,12 +1,15 @@
 package com.sell.controller;
 
+import com.sell.dataobject.PendingWmsShipment;
 import com.sell.dataobject.ProductInfo;
 import com.sell.dataobject.Recipe;
 import com.sell.dataobject.ShopConfig;
+import com.sell.repository.PendingWmsShipmentRepository;
 import com.sell.repository.ProductInfoRepository;
 import com.sell.repository.ShopConfigRepository;
 import com.sell.service.RecipeService;
 import com.sell.service.WmsClient;
+import com.sell.service.WmsRetryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -27,6 +30,8 @@ public class SellerWmsController {
     @Autowired private RecipeService recipeService;
     @Autowired private ProductInfoRepository productRepo;
     @Autowired private ShopConfigRepository configRepo;
+    @Autowired private PendingWmsShipmentRepository pendingRepo;
+    @Autowired private WmsRetryService wmsRetryService;
 
     /** 入口页 (转跳到外部 WMS UI). */
     @GetMapping("/")
@@ -180,11 +185,14 @@ public class SellerWmsController {
         return r;
     }
 
-    /** Widget: 库存总览 (物料数 / 低库存数 / 总仓位价值). */
+    /** Widget: 库存总览 (物料数 / 低库存数 / 待重试与失败出库数). */
     @GetMapping("/widget/overview")
     @ResponseBody
     public Map<String, Object> widgetOverview() {
         Map<String, Object> r = new LinkedHashMap<>();
+        // 待重试 / 彻底失败的出库数是本地数据, 不依赖 WMS 是否在线, 始终返回 → 看板可据此告警
+        r.put("pendingCount", pendingRepo.countByStatus("pending"));
+        r.put("failedCount", pendingRepo.countByStatus("failed"));
         if (!wmsClient.isConfigured()) {
             r.put("configured", false);
             return r;
@@ -194,6 +202,50 @@ public class SellerWmsController {
         List<Map<String, Object>> alerts = wmsClient.lowStockAlerts();
         r.put("itemCount", items.size());
         r.put("alertCount", alerts.size());
+        return r;
+    }
+
+    /** 待处理 / 失败的 WMS 出库计数 (看板红点用). */
+    @GetMapping("/pending/count")
+    @ResponseBody
+    public Map<String, Object> pendingCount() {
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("pending", pendingRepo.countByStatus("pending"));
+        r.put("failed", pendingRepo.countByStatus("failed"));
+        return r;
+    }
+
+    /** 待处理 + 失败的 WMS 出库清单 (供人工对账 / 手动重试; 排除已完成). */
+    @GetMapping("/pending/list")
+    @ResponseBody
+    public List<Map<String, Object>> pendingList() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (PendingWmsShipment row : pendingRepo.findAll()) {
+            if ("done".equals(row.getStatus())) continue;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", row.getId());
+            m.put("orderId", row.getOrderId());
+            m.put("status", row.getStatus());
+            m.put("attempts", row.getAttempts());
+            m.put("lastError", row.getLastError());
+            m.put("nextRetryAt", row.getNextRetryAt());
+            m.put("createTime", row.getCreateTime());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /** 手动重试一条失败 / 待处理的出库 (看板按钮). */
+    @PostMapping("/pending/retry")
+    @ResponseBody
+    public Map<String, Object> pendingRetry(@RequestParam("id") Long id) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        if (!wmsClient.isConfigured()) {
+            r.put("ok", false);
+            r.put("msg", "未配置 WMS, 无法重试");
+            return r;
+        }
+        r.put("ok", wmsRetryService.retryNow(id));
         return r;
     }
 

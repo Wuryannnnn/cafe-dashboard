@@ -490,7 +490,14 @@ export function ExpensesPage() {
   const refetch = () => { qc.invalidateQueries({ queryKey: ['expenses'] }); qc.invalidateQueries({ queryKey: ['finance-overview'] }) }
   const { data: ov } = useQuery({
     queryKey: ['finance-overview'],
-    queryFn: async () => (await api.get<{ monthIncome: number; monthExpense: number; monthBalance: number }>('/api/admin/finance-overview')).data,
+    queryFn: async () =>
+      (await api.get<{
+        monthOrderRevenue: number
+        monthIncome: number
+        monthExpense: number
+        monthBalance: number
+        monthNet: number
+      }>('/api/admin/finance-overview')).data,
   })
   const { data: cats } = useQuery({
     queryKey: ['expense-categories'],
@@ -515,10 +522,11 @@ export function ExpensesPage() {
       title='收支管理'
       actions={<CreateBtn title='收支记录' postUrl='/seller/finance/expense/recordSave' fields={recordFields} onSaved={refetch} />}
     >
-      <div className='mb-4 grid gap-3 sm:grid-cols-3'>
-        <StatBox label='本月收入' value={`¥ ${ov?.monthIncome ?? 0}`} variant='income' />
-        <StatBox label='本月支出' value={`¥ ${ov?.monthExpense ?? 0}`} variant='expense' />
-        <StatBox label='本月结余' value={`¥ ${ov?.monthBalance ?? 0}`} variant='balance' />
+      <div className='mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+        <StatBox label='本月营业收入' value={`¥ ${ov?.monthOrderRevenue ?? 0}`} variant='income' />
+        <StatBox label='本月其他收入' value={`¥ ${ov?.monthIncome ?? 0}`} variant='income' />
+        <StatBox label='本月日常支出' value={`¥ ${ov?.monthExpense ?? 0}`} variant='expense' />
+        <StatBox label='本月净利' value={`¥ ${ov?.monthNet ?? 0}`} variant='balance' />
       </div>
       <SimpleTable
         loading={isLoading}

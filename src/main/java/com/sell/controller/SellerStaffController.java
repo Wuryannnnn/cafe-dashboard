@@ -5,6 +5,7 @@ import com.sell.enums.StaffRoleEnum;
 import com.sell.exception.SellException;
 import com.sell.service.StaffService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
@@ -18,6 +19,9 @@ public class SellerStaffController {
 
     @Autowired
     private StaffService service;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @GetMapping("/list")
     public ModelAndView list(Map<String, Object> map) {
@@ -41,7 +45,7 @@ public class SellerStaffController {
             if (s == null) s = new Staff();
             s.setUsername(form.getUsername());
             if (form.getPassword() != null && !form.getPassword().isEmpty()) {
-                s.setPassword(form.getPassword());
+                s.setPassword(passwordEncoder.encode(form.getPassword()));
             }
             s.setName(form.getName());
             s.setPhone(form.getPhone());

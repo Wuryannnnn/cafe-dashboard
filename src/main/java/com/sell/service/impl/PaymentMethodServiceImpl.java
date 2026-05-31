@@ -49,6 +49,11 @@ public class PaymentMethodServiceImpl implements PaymentMethodService {
 
     @Override
     public void delete(Integer methodId) {
+        PaymentMethod m = findOne(methodId);
+        if (m == null) return; // 幂等: 不存在直接返回
+        if (Boolean.TRUE.equals(m.getIsDefault())) {
+            throw new SellException(1, "默认结账方式不能删除, 请先把其他方式设为默认");
+        }
         repository.deleteById(methodId);
     }
 
