@@ -106,9 +106,24 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
+    /** 读店铺布尔业务开关; 未配置(键不存在/空)时用 defaultOn 兜底, 保持改造前的既有行为. */
+    private boolean isSwitchOn(String key, boolean defaultOn) {
+        try {
+            com.sell.dataobject.ShopConfig c = shopConfigRepoForWms.findById(key).orElse(null);
+            if (c == null || c.getConfigValue() == null || c.getConfigValue().trim().isEmpty()) return defaultOn;
+            return "true".equalsIgnoreCase(c.getConfigValue().trim());
+        } catch (Exception e) { return defaultOn; }
+    }
+
     @Override
     @Transactional
     public OrderDTO create(OrderDTO orderDTO) {
+
+        // 扫码点餐总开关(switch.qrOrder): 关闭则拒绝顾客下单 (默认开, 未配置不拦, 不影响既有行为).
+        // 仅 BuyerOrderController 走本方法, 故只作用于顾客扫码单, 不影响收银台.
+        if (!isSwitchOn("switch.qrOrder", true)) {
+            throw new SellException(ResultEnum.PARAM_ERROR.getCode(), "扫码点餐已关闭, 暂不接受下单");
+        }
 
         // 桌台与桌号双向回填: 堂食扫码点餐时, tableId 和 tableNumber 任填一个均可
         if (orderDTO.getTableId() != null && (orderDTO.getTableNumber() == null || orderDTO.getTableNumber().isEmpty())) {
@@ -215,6 +230,17 @@ public class OrderServiceImpl implements OrderService {
         // 库存流水: 每条明细记一笔出库, 关联 orderId, 便于事后对账"库存为何变动"
         for (OrderDetail d : orderDTO.getOrderDetailList()) {
             writeStockLedger(2, orderId, d, d.getProductQuantity() == null ? 0 : -d.getProductQuantity());
+        }
+
+        // 自动接单(switch.autoAcceptOrder): 新订单自动转"制作中", 免去人工接单.
+        // - 先食后付(switch.payBeforeServe 关): 下单即接 → 这里直接转制作中
+        // - 先付后食(switch.payBeforeServe 开): 需先付款, 这里不转, 由 paid() 付款成功后再转
+        boolean autoAccept = isSwitchOn("switch.autoAcceptOrder", false);
+        boolean payBeforeServe = isSwitchOn("switch.payBeforeServe", false);
+        if (autoAccept && !payBeforeServe) {
+            orderMaster.setOrderStatus(OrderStatusEnum.MAKING.getCode());
+            orderMasterRepository.save(orderMaster);
+            orderDTO.setOrderStatus(OrderStatusEnum.MAKING.getCode());
         }
 
         //发送websocket消息
@@ -539,8 +565,10 @@ public class OrderServiceImpl implements OrderService {
         OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderDTO.getOrderId())
                 .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
 
-        //判断订单状态
-        if (!orderMaster.getOrderStatus().equals(OrderStatusEnum.NEW.getCode())) {
+        //判断订单状态: 已取消/已退款的不能再标记支付; 其余(新单/制作中/待取/已完结)均可,
+        //以兼容"先食后付"——顾客可能在订单已进入制作甚至完结后才付款.
+        if (OrderStatusEnum.CANCEL.getCode().equals(orderMaster.getOrderStatus())
+                || OrderStatusEnum.REFUNDED.getCode().equals(orderMaster.getOrderStatus())) {
             log.error("【订单支付完成】订单状态不正确, orderId={}, orderStatus={}", orderMaster.getOrderId(), orderMaster.getOrderStatus());
             throw new SellException(ResultEnum.ORDER_STATUS_ERROR);
         }
@@ -553,6 +581,14 @@ public class OrderServiceImpl implements OrderService {
 
         //修改支付状态 (在锁定实体上改)
         orderMaster.setPayStatus(PayStatusEnum.SUCCESS.getCode());
+
+        // 自动接单(先付后食): 付款成功后, 若订单仍是新单且开了自动接单, 自动转"制作中"
+        if (OrderStatusEnum.NEW.getCode().equals(orderMaster.getOrderStatus())
+                && isSwitchOn("switch.autoAcceptOrder", false)) {
+            orderMaster.setOrderStatus(OrderStatusEnum.MAKING.getCode());
+            orderDTO.setOrderStatus(OrderStatusEnum.MAKING.getCode());
+        }
+
         OrderMaster updateResult = orderMasterRepository.save(orderMaster);
         if (updateResult == null) {
             log.error("【订单支付完成】更新失败, orderMaster={}", orderMaster);

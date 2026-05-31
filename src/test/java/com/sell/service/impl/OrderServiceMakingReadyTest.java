@@ -144,9 +144,10 @@ public class OrderServiceMakingReadyTest {
     }
 
     @Test(expected = SellException.class)
-    public void paid_wrongOrderStatus() {
-        lock(OrderStatusEnum.FINISHED, PayStatusEnum.WAIT);
-        OrderDTO dto = buildDTO(OrderStatusEnum.FINISHED);
+    public void paid_cancelledOrderRejected() {
+        // 已取消订单不能标记支付 (注: 已完结现允许支付, 以兼容先食后付)
+        lock(OrderStatusEnum.CANCEL, PayStatusEnum.WAIT);
+        OrderDTO dto = buildDTO(OrderStatusEnum.CANCEL);
         dto.setPayStatus(PayStatusEnum.WAIT.getCode());
         orderService.paid(dto);
     }
