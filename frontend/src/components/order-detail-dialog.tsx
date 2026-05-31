@@ -1,6 +1,9 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -8,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 
 type Detail = {
   detailId: string
@@ -71,16 +75,58 @@ export function OrderDetailDialog({
   orderId,
   open,
   onOpenChange,
+  onChanged,
 }: {
   orderId: string | null
   open: boolean
   onOpenChange: (o: boolean) => void
+  /** 订单状态被操作改变后回调, 供父列表刷新. */
+  onChanged?: () => void
 }) {
+  const qc = useQueryClient()
+  const [busy, setBusy] = useState(false)
+  const [edit, setEdit] = useState<null | 'amount' | 'discount'>(null)
+  const [editVal, setEditVal] = useState('')
+
   const { data, isLoading } = useQuery({
     queryKey: ['order-detail', orderId],
     enabled: open && !!orderId,
     queryFn: async () => (await api.get<OrderDTO>(`/api/admin/orders/${orderId}`)).data,
   })
+
+  // 调用订单操作接口; 后端统一返回 {code,msg}, code!=0 视为业务失败.
+  const run = async (path: string, okMsg: string, params?: Record<string, string | number>) => {
+    if (!orderId || busy) return
+    setBusy(true)
+    try {
+      const body = new URLSearchParams()
+      if (params) for (const k in params) body.append(k, String(params[k]))
+      const res = await api.post<{ code: number; msg: string }>(
+        `/api/admin/orders/${orderId}/${path}`,
+        body.toString(),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      )
+      if (res.data?.code === 0) {
+        toast.success(res.data.msg || okMsg)
+        setEdit(null)
+        setEditVal('')
+        qc.invalidateQueries({ queryKey: ['order-detail', orderId] })
+        qc.invalidateQueries({ queryKey: ['pending'] })
+        qc.invalidateQueries({ queryKey: ['orders'] })
+        onChanged?.()
+      } else {
+        toast.error(res.data?.msg || '操作失败')
+      }
+    } catch {
+      toast.error('网络错误, 操作失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmRun = (msg: string, path: string, okMsg: string) => {
+    if (window.confirm(msg)) run(path, okMsg)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -166,6 +212,115 @@ export function OrderDetailDialog({
                   )
                 })}
               </div>
+            </div>
+
+            {/* 订单操作 (PRD 6.3 / 7.3): 按状态显示制作流转 / 取消 / 退款 / 改价 / 打折 / 免单 */}
+            <div className='space-y-2 border-t pt-3'>
+              <div className='flex flex-wrap gap-2'>
+                {data.orderStatus === 0 && (
+                  <Button size='sm' disabled={busy} onClick={() => run('making', '已接单')}>
+                    开始制作
+                  </Button>
+                )}
+                {data.orderStatus === 1 && (
+                  <Button size='sm' disabled={busy} onClick={() => run('ready', '待取餐')}>
+                    制作完成
+                  </Button>
+                )}
+                {data.orderStatus <= 2 && (
+                  <Button size='sm' variant='outline' disabled={busy} onClick={() => run('finish', '已完结')}>
+                    完结
+                  </Button>
+                )}
+                {data.orderStatus <= 2 && (
+                  <Button
+                    size='sm'
+                    variant='outline'
+                    disabled={busy}
+                    onClick={() => confirmRun('确认取消该订单? 已支付将原路退款。', 'cancel', '已取消')}
+                  >
+                    取消订单
+                  </Button>
+                )}
+                {data.payStatus === 1 && data.orderStatus !== 5 && (
+                  <Button
+                    size='sm'
+                    variant='destructive'
+                    disabled={busy}
+                    onClick={() => confirmRun('确认对该已支付订单退款?', 'refund', '退款成功')}
+                  >
+                    退款
+                  </Button>
+                )}
+                {data.payStatus !== 1 && data.orderStatus <= 2 && (
+                  <>
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      disabled={busy}
+                      onClick={() => {
+                        setEdit(edit === 'amount' ? null : 'amount')
+                        setEditVal('')
+                      }}
+                    >
+                      改价
+                    </Button>
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      disabled={busy}
+                      onClick={() => {
+                        setEdit(edit === 'discount' ? null : 'discount')
+                        setEditVal('')
+                      }}
+                    >
+                      打折
+                    </Button>
+                    <Button
+                      size='sm'
+                      variant='outline'
+                      disabled={busy}
+                      onClick={() => confirmRun('确认整单免单(金额改为 0)?', 'free', '已免单')}
+                    >
+                      免单
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              {edit === 'amount' && (
+                <div className='flex items-center gap-2'>
+                  <Input
+                    type='number'
+                    min='0'
+                    step='0.01'
+                    placeholder='新金额'
+                    value={editVal}
+                    onChange={(e) => setEditVal(e.target.value)}
+                    className='h-8 w-32'
+                  />
+                  <Button size='sm' disabled={busy || !editVal} onClick={() => run('amount', '改价成功', { newAmount: editVal })}>
+                    确认改价
+                  </Button>
+                </div>
+              )}
+              {edit === 'discount' && (
+                <div className='flex items-center gap-2'>
+                  <Input
+                    type='number'
+                    min='1'
+                    max='100'
+                    step='1'
+                    placeholder='折扣 1-100, 如 85 = 85折'
+                    value={editVal}
+                    onChange={(e) => setEditVal(e.target.value)}
+                    className='h-8 w-52'
+                  />
+                  <Button size='sm' disabled={busy || !editVal} onClick={() => run('discount', '打折成功', { discountRate: editVal })}>
+                    确认打折
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}

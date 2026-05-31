@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Coffee, Plus } from 'lucide-react'
+import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,6 +12,8 @@ import { OrderDetailDialog } from '@/components/order-detail-dialog'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { ManualOrderDialog } from './manual-order-dialog'
+import { MixedPayDialog } from './mixed-pay-dialog'
 
 type PendingOrder = {
   orderId: string
@@ -26,6 +29,8 @@ type PaymentMethod = { methodId: number; methodName: string; methodCode: string 
 export function Cashier() {
   const [tableId, setTableId] = useState<number | null>(null)
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null)
+  const [manualOpen, setManualOpen] = useState(false)
+  const [mixedOrder, setMixedOrder] = useState<PendingOrder | null>(null)
   const qc = useQueryClient()
 
   const { data: pending, isLoading } = useQuery({
@@ -48,14 +53,20 @@ export function Cashier() {
 
   const pay = async (orderId: string, methodId: number) => {
     try {
-      const fd = new FormData()
-      fd.append('orderId', orderId)
-      fd.append('methodId', String(methodId))
-      await api.post('/seller/cashier/offlinePay', fd)
-      qc.invalidateQueries({ queryKey: ['pending'] })
-    } catch (e) {
-      console.error(e)
-      alert('收款失败')
+      const body = new URLSearchParams()
+      body.append('orderId', orderId)
+      body.append('methodId', String(methodId))
+      const res = await api.post<{ code: number; msg: string }>('/api/admin/cashier/offline-pay', body.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      })
+      if (res.data?.code === 0) {
+        toast.success(res.data.msg || '收款成功')
+        qc.invalidateQueries({ queryKey: ['pending'] })
+      } else {
+        toast.error(res.data?.msg || '收款失败')
+      }
+    } catch {
+      toast.error('网络错误, 收款失败')
     }
   }
 
@@ -78,7 +89,7 @@ export function Cashier() {
               收银台 <span className='text-muted-foreground ms-2 text-base font-normal'>· 待收款 {pending?.length ?? 0} 单</span>
             </h1>
           </div>
-          <Button disabled title='React 收银工作流即将上线'>
+          <Button onClick={() => setManualOpen(true)}>
             <Plus className='size-4' /> 手动建单
           </Button>
         </div>
@@ -111,6 +122,7 @@ export function Cashier() {
                 order={o}
                 methods={methods ?? []}
                 onPay={pay}
+                onMixed={() => setMixedOrder(o)}
                 onDetail={() => setDetailOrderId(o.orderId)}
               />
             ))}
@@ -122,6 +134,22 @@ export function Cashier() {
         orderId={detailOrderId}
         open={!!detailOrderId}
         onOpenChange={(o) => { if (!o) setDetailOrderId(null) }}
+        onChanged={() => qc.invalidateQueries({ queryKey: ['pending'] })}
+      />
+
+      <ManualOrderDialog
+        open={manualOpen}
+        onOpenChange={setManualOpen}
+        onCreated={() => qc.invalidateQueries({ queryKey: ['pending'] })}
+      />
+
+      <MixedPayDialog
+        orderId={mixedOrder?.orderId ?? null}
+        orderAmount={mixedOrder?.orderAmount ?? 0}
+        methods={methods ?? []}
+        open={!!mixedOrder}
+        onOpenChange={(o) => { if (!o) setMixedOrder(null) }}
+        onSettled={() => { setMixedOrder(null); qc.invalidateQueries({ queryKey: ['pending'] }) }}
       />
     </>
   )
@@ -131,11 +159,13 @@ function OrderCard({
   order,
   methods,
   onPay,
+  onMixed,
   onDetail,
 }: {
   order: PendingOrder
   methods: PaymentMethod[]
   onPay: (orderId: string, methodId: number) => void
+  onMixed: () => void
   onDetail: () => void
 }) {
   const [methodId, setMethodId] = useState<number>(methods[0]?.methodId ?? 0)
@@ -176,6 +206,9 @@ function OrderCard({
           </select>
           <Button className='flex-1' onClick={() => onPay(order.orderId, methodId)}>
             全额收款
+          </Button>
+          <Button variant='outline' onClick={onMixed} title='分笔 / 组合收款'>
+            组合
           </Button>
         </div>
 
