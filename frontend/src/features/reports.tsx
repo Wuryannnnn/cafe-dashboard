@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Download } from 'lucide-react'
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Cell, PieChart, Pie } from 'recharts'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +32,41 @@ function PeriodSwitch({ value, onChange }: { value: number; onChange: (n: number
   )
 }
 
+/** 导出 Excel: 走后端 /seller/report/export, 同源带 HttpOnly cookie, 浏览器据 Content-Disposition 下载. */
+function ExportButton({ type, days }: { type: 'sales' | 'products' | 'payments'; days: number }) {
+  const onExport = () => {
+    const end = new Date()
+    const start = new Date()
+    start.setDate(start.getDate() - (days - 1))
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const url = `/sell/seller/report/export?type=${type}&start=${fmt(start)}&end=${fmt(end)}`
+    const a = document.createElement('a')
+    a.href = url
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+  return (
+    <button
+      onClick={onExport}
+      className='border-input text-muted-foreground hover:text-foreground bg-background inline-flex items-center gap-1 rounded-md border px-3 py-1 text-xs font-medium transition-colors'
+    >
+      <Download className='size-3.5' /> 导出 Excel
+    </button>
+  )
+}
+
+function ReportActions({ type, days, onChange }: { type: 'sales' | 'products' | 'payments'; days: number; onChange: (n: number) => void }) {
+  return (
+    <div className='flex items-center gap-2'>
+      <ExportButton type={type} days={days} />
+      <PeriodSwitch value={days} onChange={onChange} />
+    </div>
+  )
+}
+
 export function ReportsSales() {
   const [days, setDays] = useState(7)
   const { data, isLoading } = useQuery({
@@ -39,7 +75,7 @@ export function ReportsSales() {
   })
 
   return (
-    <PageShell pretitle='报表 / 营业' title='营业报表' actions={<PeriodSwitch value={days} onChange={setDays} />}>
+    <PageShell pretitle='报表 / 营业' title='营业报表' actions={<ReportActions type='sales' days={days} onChange={setDays} />}>
       <div className='mb-4 grid gap-3 sm:grid-cols-3'>
         <Stat label='总营业额' value={`¥ ${data?.totals?.revenue ?? 0}`} />
         <Stat label='订单数' value={data?.totals?.orderCount ?? 0} />
@@ -84,7 +120,7 @@ export function ReportsProducts() {
   })
 
   return (
-    <PageShell pretitle='报表 / 菜品' title='菜品报表' actions={<PeriodSwitch value={days} onChange={setDays} />}>
+    <PageShell pretitle='报表 / 菜品' title='菜品报表' actions={<ReportActions type='products' days={days} onChange={setDays} />}>
       <SimpleTable
         loading={isLoading}
         rows={data?.topProducts}
@@ -127,7 +163,7 @@ export function ReportsPayments() {
   const total = data?.rows?.reduce((s: number, r: any) => s + Number(r.amount ?? 0), 0) ?? 0
 
   return (
-    <PageShell pretitle='报表 / 收款' title='收款报表' actions={<PeriodSwitch value={days} onChange={setDays} />}>
+    <PageShell pretitle='报表 / 收款' title='收款报表' actions={<ReportActions type='payments' days={days} onChange={setDays} />}>
       <div className='grid gap-4 lg:grid-cols-2'>
         <Card>
           <CardContent className='p-5'>
