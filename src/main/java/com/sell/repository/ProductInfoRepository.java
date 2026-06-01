@@ -41,4 +41,9 @@ public interface ProductInfoRepository extends JpaRepository<ProductInfo, String
     @Query("UPDATE ProductInfo p SET p.productStock = COALESCE(p.productStock, 0) + :delta "
             + "WHERE p.productId = :productId AND COALESCE(p.productStock, 0) + :delta >= 0")
     int adjustStockAtomic(@Param("productId") String productId, @Param("delta") Integer delta);
+
+    /** 设置顾客端(H5)是否展示该商品. 原子更新, 避免读-改-写把 productIcon 等字段连带改坏. */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE ProductInfo p SET p.h5Display = :v WHERE p.productId = :productId")
+    int updateH5Display(@Param("productId") String productId, @Param("v") Integer v);
 }

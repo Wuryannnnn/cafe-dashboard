@@ -50,6 +50,9 @@ public class ProductInfo implements Serializable {
     /** 显示排序, 越小越靠前. */
     private Integer sortOrder = 0;
 
+    /** 是否在顾客端(H5)展示: 1=展示 0=隐藏. 默认展示; null(旧数据)按展示处理. 实现"点餐菜品独立于店内菜单"(PRD 4.2). */
+    private Integer h5Display = 1;
+
     private Date createTime;
 
     private Date updateTime;

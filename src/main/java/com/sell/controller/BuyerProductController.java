@@ -47,8 +47,10 @@ public class BuyerProductController {
 
     @GetMapping("/list")
     public ResultVO list(@RequestParam(value = "sellerId", required = false) String sellerId) {
-        //1. 查询所有的上架商品(按排序)
-        List<ProductInfo> productInfoList = productService.findUpAll();
+        //1. 查询所有的上架商品(按排序); 过滤掉"顾客端隐藏"的商品(h5Display=0), null 视为展示
+        List<ProductInfo> productInfoList = productService.findUpAll().stream()
+                .filter(p -> p.getH5Display() == null || p.getH5Display() != 0)
+                .collect(Collectors.toList());
         productInfoList.sort(java.util.Comparator.comparingInt(p -> p.getSortOrder() != null ? p.getSortOrder() : 0));
 
         //2. 查询类目(按排序)

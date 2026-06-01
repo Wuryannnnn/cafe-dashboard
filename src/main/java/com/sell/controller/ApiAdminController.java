@@ -268,6 +268,15 @@ public class ApiAdminController {
         return productInfoRepository.findAll(Sort.by("categoryType"));
     }
 
+    /** 切换商品在顾客端(H5)是否展示 (PRD 4.2 点餐菜品独立管理). show=true 展示, false 隐藏. */
+    @PostMapping("/products/{productId}/h5-display")
+    @org.springframework.transaction.annotation.Transactional
+    public Map<String, Object> setH5Display(@PathVariable("productId") String productId,
+                                            @RequestParam("show") boolean show) {
+        int updated = productInfoRepository.updateH5Display(productId, show ? 1 : 0);
+        return updated > 0 ? ok(show ? "已在顾客端展示" : "已从顾客端隐藏") : fail(new RuntimeException("商品不存在"));
+    }
+
     @GetMapping("/categories")
     public List<ProductCategory> categories() {
         return categoryRepository.findAll(Sort.by("categoryType"));

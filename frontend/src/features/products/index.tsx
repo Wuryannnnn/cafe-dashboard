@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus } from 'lucide-react'
+import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ type Product = {
   productIcon?: string
   productStatus: number
   categoryType: number
+  h5Display?: number
 }
 
 type Category = {
@@ -35,6 +37,28 @@ export function Products() {
   const [filter, setFilter] = useState<number | null>(null)
   const qc = useQueryClient()
   const refetch = () => qc.invalidateQueries({ queryKey: ['products'] })
+
+  // 切换商品在顾客端(H5)是否展示
+  const toggleH5 = async (p: Product) => {
+    const show = (p.h5Display ?? 1) === 0 // 当前隐藏 → 改为展示
+    try {
+      const body = new URLSearchParams()
+      body.append('show', String(show))
+      const res = await api.post<{ code: number; msg: string }>(
+        `/api/admin/products/${p.productId}/h5-display`,
+        body.toString(),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      )
+      if (res.data?.code === 0) {
+        toast.success(res.data.msg)
+        refetch()
+      } else {
+        toast.error(res.data?.msg || '操作失败')
+      }
+    } catch {
+      toast.error('网络错误, 操作失败')
+    }
+  }
 
   const { data: products, isLoading } = useQuery({
     queryKey: ['products'],
@@ -159,13 +183,23 @@ export function Products() {
                         <td className='p-3 text-right font-semibold tabular-nums'>¥ {p.productPrice}</td>
                         <td className='p-3 text-right tabular-nums'>{p.productStock}</td>
                         <td className='p-3'>
-                          {p.productStatus === 0 ? (
-                            <Badge variant='secondary' className='bg-emerald-100 text-emerald-700 hover:bg-emerald-100'>
-                              在售
-                            </Badge>
-                          ) : (
-                            <Badge variant='destructive'>停售</Badge>
-                          )}
+                          <span className='inline-flex items-center gap-1.5'>
+                            {p.productStatus === 0 ? (
+                              <Badge variant='secondary' className='bg-emerald-100 text-emerald-700 hover:bg-emerald-100'>
+                                在售
+                              </Badge>
+                            ) : (
+                              <Badge variant='destructive'>停售</Badge>
+                            )}
+                            <button onClick={() => toggleH5(p)} title='点击切换顾客端(H5)是否展示'>
+                              <Badge
+                                variant={(p.h5Display ?? 1) === 0 ? 'outline' : 'secondary'}
+                                className='cursor-pointer text-xs'
+                              >
+                                {(p.h5Display ?? 1) === 0 ? 'H5隐藏' : 'H5展示'}
+                              </Badge>
+                            </button>
+                          </span>
                         </td>
                         <td className='p-3 text-right whitespace-nowrap'>
                           <span className='inline-flex items-center gap-3'>
