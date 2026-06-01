@@ -54,13 +54,29 @@ const STATUS_VARIANT: Record<number, 'default' | 'secondary' | 'destructive' | '
 
 export function Orders() {
   const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState<number | null>(null)
+  const [keyword, setKeyword] = useState('')
+  const [appliedKeyword, setAppliedKeyword] = useState('')
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null)
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page],
-    queryFn: async () => (await api.get<OrdersPage>('/api/admin/orders', { params: { page, size: 20 } })).data,
+    queryKey: ['orders', page, statusFilter, appliedKeyword],
+    queryFn: async () =>
+      (await api.get<OrdersPage>('/api/admin/orders', {
+        params: {
+          page,
+          size: 20,
+          ...(statusFilter != null ? { status: statusFilter } : {}),
+          ...(appliedKeyword ? { keyword: appliedKeyword } : {}),
+        },
+      })).data,
   })
+
+  const pickStatus = (s: number | null) => {
+    setStatusFilter(s)
+    setPage(1)
+  }
 
   const act = async (path: string) => {
     try {
@@ -91,6 +107,47 @@ export function Orders() {
               订单 <span className='text-muted-foreground ms-2 text-base font-normal'>共 {data?.totalElements ?? 0} 单</span>
             </h1>
           </div>
+        </div>
+
+        <div className='mb-4 flex flex-wrap items-center gap-2'>
+          <div className='flex flex-wrap gap-1'>
+            <Chip active={statusFilter == null} onClick={() => pickStatus(null)}>全部</Chip>
+            {[0, 1, 2, 3, 4, 5].map((s) => (
+              <Chip key={s} active={statusFilter === s} onClick={() => pickStatus(s)}>
+                {STATUS_LABELS[s]}
+              </Chip>
+            ))}
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              setAppliedKeyword(keyword.trim())
+              setPage(1)
+            }}
+            className='ms-auto flex items-center gap-2'
+          >
+            <input
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder='订单号 / 取餐号 / 桌号 / 手机号'
+              className='border-input bg-background w-56 rounded-md border px-3 py-1.5 text-sm'
+            />
+            <Button type='submit' variant='outline' size='sm'>搜索</Button>
+            {appliedKeyword && (
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                onClick={() => {
+                  setKeyword('')
+                  setAppliedKeyword('')
+                  setPage(1)
+                }}
+              >
+                清除
+              </Button>
+            )}
+          </form>
         </div>
 
         <Card>
@@ -216,5 +273,19 @@ export function Orders() {
         onOpenChange={(o) => { if (!o) setDetailOrderId(null) }}
       />
     </>
+  )
+}
+
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        'rounded-full border px-3 py-1 text-xs transition-colors ' +
+        (active ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground hover:bg-muted')
+      }
+    >
+      {children}
+    </button>
   )
 }

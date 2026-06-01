@@ -100,10 +100,16 @@ public class ApiAdminController {
     @GetMapping("/orders")
     public Map<String, Object> orders(
             @RequestParam(value = "page", defaultValue = "1") int page,
-            @RequestParam(value = "size", defaultValue = "20") int size) {
-        Page<OrderDTO> p = orderService.findList(PageRequest.of(page - 1, size));
+            @RequestParam(value = "size", defaultValue = "20") int size,
+            @RequestParam(value = "status", required = false) Integer status,
+            @RequestParam(value = "keyword", required = false) String keyword) {
+        String kw = (keyword == null || keyword.trim().isEmpty()) ? null : keyword.trim();
+        org.springframework.data.domain.Pageable pageable =
+                PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createTime"));
+        Page<OrderMaster> p = orderMasterRepository.search(status, kw, pageable);
+        List<OrderDTO> content = com.sell.converter.OrderMaster2OrderDTOConverter.convert(p.getContent());
         Map<String, Object> r = new HashMap<>();
-        r.put("content", p.getContent());
+        r.put("content", content);
         r.put("totalElements", p.getTotalElements());
         r.put("totalPages", p.getTotalPages());
         r.put("page", page);

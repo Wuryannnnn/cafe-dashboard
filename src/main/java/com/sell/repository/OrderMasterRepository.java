@@ -26,6 +26,18 @@ public interface OrderMasterRepository extends JpaRepository<OrderMaster, String
     @Query("SELECT o FROM OrderMaster o WHERE o.orderId = :orderId")
     Optional<OrderMaster> findByOrderIdForUpdate(@Param("orderId") String orderId);
 
+    /**
+     * 订单列表筛选: 按状态 + 关键字(订单号/取餐号/桌号/手机号 模糊匹配).
+     * status / kw 为 null 时该条件不生效, 排序与分页由 Pageable 提供.
+     */
+    @Query("SELECT o FROM OrderMaster o WHERE "
+            + "(:status IS NULL OR o.orderStatus = :status) AND "
+            + "(:kw IS NULL OR o.orderId LIKE CONCAT('%', :kw, '%') "
+            + "OR o.pickupNumber LIKE CONCAT('%', :kw, '%') "
+            + "OR o.tableNumber LIKE CONCAT('%', :kw, '%') "
+            + "OR o.buyerPhone LIKE CONCAT('%', :kw, '%'))")
+    Page<OrderMaster> search(@Param("status") Integer status, @Param("kw") String kw, Pageable pageable);
+
     // 营收口径统一为"已支付"(payStatus=1): 自动排除未支付(0)与已退款(2, 退款后置为该状态),
     // 与 sumByPayType 一致, 使总额卡片与每日/品类明细可对账.
 
