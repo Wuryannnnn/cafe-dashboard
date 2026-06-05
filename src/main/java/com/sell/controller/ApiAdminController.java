@@ -277,6 +277,38 @@ public class ApiAdminController {
         return updated > 0 ? ok(show ? "已在顾客端展示" : "已从顾客端隐藏") : fail(new RuntimeException("商品不存在"));
     }
 
+    /** 复制商品: 基于现有商品生成一份副本(基本信息 + 规格 SKU), 新副本默认停售, 供店主改名/调价后上架. */
+    @PostMapping("/products/{productId}/copy")
+    @org.springframework.transaction.annotation.Transactional
+    public Map<String, Object> copyProduct(@PathVariable("productId") String productId) {
+        try {
+            ProductInfo src = productInfoRepository.findById(productId).orElse(null);
+            if (src == null) return fail(new RuntimeException("商品不存在"));
+
+            java.util.Date now = new java.util.Date();
+            ProductInfo copy = new ProductInfo();
+            org.springframework.beans.BeanUtils.copyProperties(src, copy);
+            copy.setProductId(com.sell.utils.KeyUtil.genUniqueKey());
+            copy.setProductName((src.getProductName() == null ? "" : src.getProductName()) + "(副本)");
+            copy.setProductStatus(com.sell.enums.ProductStatusEnum.DOWN.getCode()); // 默认停售, 确认后再上架
+            copy.setCreateTime(now);
+            copy.setUpdateTime(now);
+            productInfoRepository.save(copy);
+
+            // 连同规格(SKU)一起复制, 各自生成新 skuId 指向副本
+            for (com.sell.dataobject.ProductSku s : productSkuRepository.findByProductId(productId)) {
+                com.sell.dataobject.ProductSku ns = new com.sell.dataobject.ProductSku();
+                org.springframework.beans.BeanUtils.copyProperties(s, ns);
+                ns.setSkuId(com.sell.utils.KeyUtil.genUniqueKey());
+                ns.setProductId(copy.getProductId());
+                productSkuRepository.save(ns);
+            }
+            return ok("已复制为「" + copy.getProductName() + "」, 默认停售, 可编辑后上架");
+        } catch (Exception e) {
+            return fail(e);
+        }
+    }
+
     @GetMapping("/categories")
     public List<ProductCategory> categories() {
         return categoryRepository.findAll(Sort.by("categoryType"));

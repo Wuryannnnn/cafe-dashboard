@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus } from 'lucide-react'
+import { Copy, Pencil, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
@@ -57,6 +57,24 @@ export function Products() {
       }
     } catch {
       toast.error('网络错误, 操作失败')
+    }
+  }
+
+  // 复制商品(连规格), 生成默认停售的副本供改名调价后上架
+  const copyProduct = async (p: Product) => {
+    try {
+      const res = await api.post<{ code: number; msg: string }>(
+        `/api/admin/products/${p.productId}/copy`,
+        ''
+      )
+      if (res.data?.code === 0) {
+        toast.success(res.data.msg)
+        refetch()
+      } else {
+        toast.error(res.data?.msg || '复制失败')
+      }
+    } catch {
+      toast.error('网络错误, 复制失败')
     }
   }
 
@@ -215,6 +233,13 @@ export function Products() {
                                 </button>
                               }
                             />
+                            <button
+                              onClick={() => copyProduct(p)}
+                              className='text-muted-foreground text-xs hover:underline'
+                              title='复制为新商品(默认停售)'
+                            >
+                              <Copy className='inline size-3.5' /> 复制
+                            </button>
                             <ConfirmDeleteButton
                               url={
                                 p.productStatus === 0
