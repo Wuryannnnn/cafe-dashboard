@@ -4,12 +4,17 @@
  */
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Send } from 'lucide-react'
+import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDeleteButton } from '@/components/confirm-delete-button'
 import { CrudDialog, type FieldDef } from '@/components/crud-dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageShell } from '@/components/page-shell'
 import { SimpleTable } from '@/components/simple-table'
 
@@ -236,6 +241,101 @@ const COUPON_FIELDS: FieldDef[] = [
   { key: 'enabled', label: '启用', type: 'switch' },
 ]
 
+/** 定向发放优惠券: 全部会员 / 指定等级 / 指定标签 (PRD 8.6). */
+function DistributeCouponDialog({ coupon, onDone }: { coupon: any; onDone: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [target, setTarget] = useState<'all' | 'level' | 'tag'>('all')
+  const [levelId, setLevelId] = useState('')
+  const [tag, setTag] = useState('')
+  const [busy, setBusy] = useState(false)
+  const { data: levels } = useQuery({
+    queryKey: ['member-levels'],
+    queryFn: async () => (await api.get<any[]>('/api/admin/member-levels')).data,
+    enabled: open,
+  })
+
+  const submit = async () => {
+    if (target === 'level' && !levelId) { toast.error('请选择会员等级'); return }
+    if (target === 'tag' && !tag.trim()) { toast.error('请填写标签'); return }
+    setBusy(true)
+    try {
+      const body = new URLSearchParams()
+      body.append('target', target)
+      if (target === 'level') body.append('value', levelId)
+      if (target === 'tag') body.append('value', tag.trim())
+      const res = await api.post<{ code: number; msg: string }>(
+        `/api/admin/coupons/${coupon.couponId}/distribute`,
+        body.toString(),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      )
+      if (res.data?.code === 0) {
+        toast.success(res.data.msg)
+        setOpen(false)
+        onDone()
+      } else {
+        toast.error(res.data?.msg || '发放失败')
+      }
+    } catch {
+      toast.error('网络错误, 发放失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button className='text-primary inline-flex items-center gap-1 text-xs hover:underline'>
+          <Send className='size-3.5' /> 发放
+        </button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>发放「{coupon.couponName}」</DialogTitle>
+        </DialogHeader>
+        <div className='space-y-4 py-1'>
+          <div className='space-y-1.5'>
+            <Label>发放对象</Label>
+            <Select value={target} onValueChange={(v) => setTarget(v as 'all' | 'level' | 'tag')}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>全部会员</SelectItem>
+                <SelectItem value='level'>指定等级</SelectItem>
+                <SelectItem value='tag'>指定标签</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {target === 'level' && (
+            <div className='space-y-1.5'>
+              <Label>会员等级</Label>
+              <Select value={levelId} onValueChange={setLevelId}>
+                <SelectTrigger><SelectValue placeholder='选择等级' /></SelectTrigger>
+                <SelectContent>
+                  {(levels ?? []).map((l) => (
+                    <SelectItem key={l.levelId} value={String(l.levelId)}>{l.levelName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {target === 'tag' && (
+            <div className='space-y-1.5'>
+              <Label>标签</Label>
+              <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder='如 VIP / 常客' />
+              <p className='text-muted-foreground text-xs'>含该标签的会员都会收到（按标签子串匹配）</p>
+            </div>
+          )}
+          <p className='text-muted-foreground text-xs'>已持有该券未使用的会员会自动跳过；受发放总量上限约束。</p>
+        </div>
+        <DialogFooter>
+          <Button variant='outline' onClick={() => setOpen(false)} disabled={busy}>取消</Button>
+          <Button onClick={submit} disabled={busy}>{busy ? '发放中…' : '确认发放'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function CouponsPage() {
   const qc = useQueryClient()
   const refetch = () => qc.invalidateQueries({ queryKey: ['coupons'] })
@@ -258,11 +358,16 @@ export function CouponsPage() {
           { header: '类型', render: (r) => r.couponType === 1 ? '折扣' : '满减' },
           { header: '面额', align: 'right', render: (r) => r.couponType === 1 ? `${r.faceValue}%` : `¥${r.faceValue}` },
           { header: '门槛', align: 'right', render: (r) => r.minSpend > 0 ? `满 ¥${r.minSpend}` : '无' },
-          { header: '已发放', align: 'right', render: (r) => <span className='tabular-nums'>{r.issuedCount ?? 0}</span> },
-          { header: '已核销', align: 'right', render: (r) => <span className='tabular-nums'>{r.usedCount ?? 0}</span> },
+          { header: '已发放', align: 'right', render: (r) => <span className='tabular-nums'>{r.issuedQuantity ?? 0}{r.totalQuantity ? ` / ${r.totalQuantity}` : ''}</span> },
+          { header: '已核销', align: 'right', render: (r) => <span className='tabular-nums'>{r.redeemedQuantity ?? 0}</span> },
           {
             header: '操作', align: 'right',
-            render: (r) => <EditDel title='优惠券' postUrl='/seller/coupon/save' deleteUrl={`/seller/coupon/delete?couponId=${r.couponId}`} fields={COUPON_FIELDS} initial={r} onSaved={refetch} />,
+            render: (r) => (
+              <span className='inline-flex items-center gap-3'>
+                <DistributeCouponDialog coupon={r} onDone={refetch} />
+                <EditDel title='优惠券' postUrl='/seller/coupon/save' deleteUrl={`/seller/coupon/delete?couponId=${r.couponId}`} fields={COUPON_FIELDS} initial={r} onSaved={refetch} />
+              </span>
+            ),
           },
         ]}
       />

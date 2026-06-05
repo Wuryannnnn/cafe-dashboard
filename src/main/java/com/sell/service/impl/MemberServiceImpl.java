@@ -24,10 +24,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class MemberServiceImpl implements MemberService {
@@ -264,6 +267,62 @@ public class MemberServiceImpl implements MemberService {
         mc.setStatus(0);
         mc.setObtainedTime(now);
         return memberCouponRepo.save(mc);
+    }
+
+    @Override
+    @Transactional
+    public int distributeCoupon(Integer couponId, String target, String value) {
+        Coupon c = couponRepository.findById(couponId).orElseThrow(() -> new SellException(1, "券不存在"));
+        if (Boolean.FALSE.equals(c.getEnabled())) {
+            throw new SellException(1, "优惠券已停用");
+        }
+        Date now = new Date();
+        if (c.getValidFrom() != null && now.before(c.getValidFrom())) {
+            throw new SellException(1, "优惠券未到生效时间");
+        }
+        if (c.getValidTo() != null && now.after(c.getValidTo())) {
+            throw new SellException(1, "优惠券已过期");
+        }
+
+        // 选定发放对象
+        List<Member> targets;
+        String t = target == null ? "all" : target.trim().toLowerCase();
+        if ("level".equals(t)) {
+            if (value == null || value.trim().isEmpty()) throw new SellException(1, "请选择会员等级");
+            Integer levelId;
+            try { levelId = Integer.valueOf(value.trim()); }
+            catch (NumberFormatException e) { throw new SellException(1, "会员等级不合法"); }
+            targets = memberRepository.findByLevelId(levelId);
+        } else if ("tag".equals(t)) {
+            if (value == null || value.trim().isEmpty()) throw new SellException(1, "请填写标签");
+            targets = memberRepository.findByTagLike(value.trim());
+        } else {
+            targets = memberRepository.findAll();
+        }
+        if (targets.isEmpty()) {
+            throw new SellException(1, "没有匹配的会员");
+        }
+
+        // 去重: 已持有该券未使用的会员跳过, 避免重复发放
+        Set<Integer> holding = new HashSet<>(memberCouponRepo.findHoldingMemberIds(couponId));
+
+        // 注意: couponRepository.tryIssue 标了 clearAutomatically, 每次调用会清空持久化上下文.
+        // 若在循环内逐个 save(mc), 未 flush 的插入会被下一次 tryIssue 的 clear 丢弃(只剩最后一条).
+        // 因此先把待发券收集到普通 List(瞬态对象不受 clear 影响), 循环结束后一次性 saveAll.
+        List<MemberCoupon> toSave = new ArrayList<>();
+        for (Member m : targets) {
+            if (holding.contains(m.getMemberId())) continue;
+            // 原子占用一个发行额度(尊重 totalQuantity 上限, 并发安全); 0=已发完 → 停止
+            if (couponRepository.tryIssue(couponId, now) == 0) break;
+            MemberCoupon mc = new MemberCoupon();
+            mc.setMemberId(m.getMemberId());
+            mc.setCouponId(couponId);
+            mc.setStatus(0);
+            mc.setObtainedTime(now);
+            toSave.add(mc);
+        }
+        memberCouponRepo.saveAll(toSave);
+        return toSave.size();
     }
 
     private Member findOrThrow(Integer memberId) {

@@ -46,4 +46,10 @@ public interface MemberService {
 
     /** 给会员发放优惠券. */
     MemberCoupon issueCoupon(Integer memberId, Integer couponId);
+
+    /**
+     * 定向发放优惠券 (PRD 8.6): target = all 全部会员 / level 指定等级 / tag 指定标签.
+     * 已持有同一张未使用券的会员自动跳过; 受发行总量上限约束. 返回实际发放张数.
+     */
+    int distributeCoupon(Integer couponId, String target, String value);
 }

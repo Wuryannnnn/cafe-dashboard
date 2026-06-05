@@ -20,6 +20,13 @@ public interface MemberRepository extends JpaRepository<Member, Integer> {
 
     Page<Member> findByPhoneContainingOrNicknameContaining(String phone, String nickname, Pageable pageable);
 
+    /** 按等级查会员 (定向发券: 指定等级). */
+    List<Member> findByLevelId(Integer levelId);
+
+    /** 按标签模糊匹配会员 (定向发券: 指定标签). tags 为逗号分隔串, 用 LIKE 子串匹配. */
+    @Query("SELECT m FROM Member m WHERE m.tags LIKE CONCAT('%', :tag, '%')")
+    List<Member> findByTagLike(@Param("tag") String tag);
+
     /**
      * 原子扣减会员余额 (仅当余额充足时才扣), 防止并发双花. 同时累加消费额/次数.
      * 返回受影响行数 (1=成功, 0=余额不足/会员不存在).

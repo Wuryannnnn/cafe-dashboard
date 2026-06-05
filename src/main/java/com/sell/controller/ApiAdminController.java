@@ -334,6 +334,19 @@ public class ApiAdminController {
         return couponRepository.findAll(Sort.by(Sort.Direction.DESC, "couponId"));
     }
 
+    /** 定向发放优惠券: target=all 全部会员 / level 指定等级(value=等级id) / tag 指定标签(value=标签). PRD 8.6. */
+    @PostMapping("/coupons/{couponId}/distribute")
+    public Map<String, Object> distributeCoupon(@PathVariable("couponId") Integer couponId,
+                                                @RequestParam("target") String target,
+                                                @RequestParam(value = "value", required = false) String value) {
+        try {
+            int n = memberService.distributeCoupon(couponId, target, value);
+            return ok("已发放 " + n + " 张");
+        } catch (Exception e) {
+            return fail(e);
+        }
+    }
+
     @GetMapping("/promotions")
     public List<Promotion> promotions() {
         return promotionRepository.findAll(Sort.by(Sort.Direction.DESC, "promotionId"));
