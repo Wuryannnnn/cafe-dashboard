@@ -2,7 +2,7 @@
  * 简单 list 页面集合（会员/等级/优惠券/营销/常用备注/员工/日志/打印机/结算账户 等）
  * 全部读自 /api/admin/*; 增删改通过 CrudDialog + 老 controller 的 /save /delete (返回 200 即成功).
  */
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2, Send } from 'lucide-react'
 import { toast } from 'sonner'
@@ -498,12 +498,44 @@ export function StaffPage() {
 }
 
 export function LogsPage() {
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [applied, setApplied] = useState({ start: '', end: '', keyword: '' })
   const { data, isLoading } = useQuery({
-    queryKey: ['logs'],
-    queryFn: async () => (await api.get<any[]>('/api/admin/logs')).data,
+    queryKey: ['logs', applied],
+    queryFn: async () => {
+      const p = new URLSearchParams()
+      if (applied.start) p.append('start', applied.start)
+      if (applied.end) p.append('end', applied.end)
+      if (applied.keyword) p.append('keyword', applied.keyword)
+      const qs = p.toString()
+      return (await api.get<any[]>(`/api/admin/logs${qs ? `?${qs}` : ''}`)).data
+    },
   })
+  const apply = (e?: FormEvent) => {
+    e?.preventDefault()
+    setApplied({ start, end, keyword: keyword.trim() })
+  }
+  const reset = () => {
+    setStart(''); setEnd(''); setKeyword('')
+    setApplied({ start: '', end: '', keyword: '' })
+  }
   return (
     <PageShell pretitle='设置 / 操作日志' title='操作日志'>
+      <form onSubmit={apply} className='mb-4 flex flex-wrap items-end gap-2'>
+        <div className='space-y-1'>
+          <span className='text-muted-foreground block text-xs'>开始日期</span>
+          <Input type='date' value={start} max={end || undefined} onChange={(e) => setStart(e.target.value)} className='h-9 w-40' />
+        </div>
+        <div className='space-y-1'>
+          <span className='text-muted-foreground block text-xs'>结束日期</span>
+          <Input type='date' value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} className='h-9 w-40' />
+        </div>
+        <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder='操作员 / 类型 / 说明 关键字' className='h-9 w-56' />
+        <Button type='submit' className='h-9'>查询</Button>
+        <Button type='button' variant='outline' className='h-9' onClick={reset}>重置</Button>
+      </form>
       <SimpleTable
         loading={isLoading}
         rows={data}

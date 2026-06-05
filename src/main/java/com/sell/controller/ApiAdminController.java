@@ -362,9 +362,27 @@ public class ApiAdminController {
         return staffRepository.findAll(Sort.by("staffId"));
     }
 
+    /** 操作日志: 支持按日期区间(start/end, yyyy-MM-dd) + 关键字(操作员/类型/说明) 筛选, 均可空. */
     @GetMapping("/logs")
-    public List<OperationLog> logs() {
-        return operationLogRepository.findAll(Sort.by(Sort.Direction.DESC, "createTime")).stream().limit(200).toList();
+    public List<OperationLog> logs(@RequestParam(value = "start", required = false) String start,
+                                   @RequestParam(value = "end", required = false) String end,
+                                   @RequestParam(value = "keyword", required = false) String keyword) {
+        java.util.Date s = parseDay(start, 0);
+        java.util.Date e = parseDay(end, 1); // 含当天: 取到次日 0 点 (左闭右开)
+        String kw = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
+        return operationLogRepository.search(s, e, kw,
+                PageRequest.of(0, 500, Sort.by(Sort.Direction.DESC, "createTime"))).getContent();
+    }
+
+    /** 把 yyyy-MM-dd 解析成当天 0 点(+plusDays 天)的时间; 空或非法格式返回 null(即不限). */
+    private java.util.Date parseDay(String day, int plusDays) {
+        if (day == null || day.isBlank()) return null;
+        try {
+            return java.util.Date.from(java.time.LocalDate.parse(day.trim()).plusDays(plusDays)
+                    .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+        } catch (java.time.format.DateTimeParseException ex) {
+            return null;
+        }
     }
 
     @GetMapping("/printers")
