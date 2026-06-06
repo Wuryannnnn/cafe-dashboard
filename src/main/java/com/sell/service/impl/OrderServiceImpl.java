@@ -314,8 +314,11 @@ public class OrderServiceImpl implements OrderService {
         java.util.Map<Long, java.math.BigDecimal> agg = new java.util.HashMap<>();
         java.util.Map<Long, com.sell.dataobject.Recipe> sample = new java.util.HashMap<>();
         for (OrderDetail d : orderDTO.getOrderDetailList()) {
+            if (d.getProductQuantity() == null) continue;
             List<com.sell.dataobject.Recipe> recipes = recipeService.findByProductSku(d.getProductId(), d.getSkuId());
             for (com.sell.dataobject.Recipe r : recipes) {
+                // 配方未配齐(原料ID或用量为空)就跳过, 避免 NPE 拖垮整个下单
+                if (r.getWmsItemId() == null || r.getQuantity() == null) continue;
                 java.math.BigDecimal need = r.getQuantity()
                         .multiply(java.math.BigDecimal.valueOf(d.getProductQuantity()));
                 agg.merge(r.getWmsItemId(), need, java.math.BigDecimal::add);
@@ -342,8 +345,11 @@ public class OrderServiceImpl implements OrderService {
         java.util.Map<Long, java.math.BigDecimal> agg = new java.util.HashMap<>();
         java.util.Map<Long, com.sell.dataobject.Recipe> sample = new java.util.HashMap<>();
         for (OrderDetail d : orderDTO.getOrderDetailList()) {
+            if (d.getProductQuantity() == null) continue;
             List<com.sell.dataobject.Recipe> recipes = recipeService.findByProductSku(d.getProductId(), d.getSkuId());
             for (com.sell.dataobject.Recipe r : recipes) {
+                // 配方未配齐就跳过, 避免 NPE
+                if (r.getWmsItemId() == null || r.getQuantity() == null) continue;
                 java.math.BigDecimal need = r.getQuantity()
                         .multiply(java.math.BigDecimal.valueOf(d.getProductQuantity()));
                 agg.merge(r.getWmsItemId(), need, java.math.BigDecimal::add);
@@ -354,10 +360,11 @@ public class OrderServiceImpl implements OrderService {
         java.util.List<java.util.Map<String, Object>> details = new java.util.ArrayList<>();
         for (java.util.Map.Entry<Long, java.math.BigDecimal> e : agg.entrySet()) {
             java.util.Map<String, Object> m = new java.util.HashMap<>();
-            m.put("itemId", e.getKey());
+            // 与出库一致: ID 以 String 存, 防 GSON 把 19 位 Long 解成 Double 丢精度
+            m.put("itemId", e.getKey().toString());
             m.put("quantity", e.getValue());
             com.sell.dataobject.Recipe s = sample.get(e.getKey());
-            if (s != null && s.getWmsSkuId() != null) m.put("skuId", s.getWmsSkuId());
+            if (s != null && s.getWmsSkuId() != null) m.put("skuId", s.getWmsSkuId().toString());
             details.add(m);
         }
         wmsClient.createReceipt(orderDTO.getOrderId(), details);
