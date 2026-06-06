@@ -103,7 +103,8 @@ public class CashierServiceImpl implements CashierService {
         OrderMaster om = orderMasterRepository.findById(orderDTO.getOrderId()).orElse(null);
         if (om != null
                 && PayStatusEnum.WAIT.getCode().equals(om.getPayStatus())
-                && paid.compareTo(orderDTO.getOrderAmount()) >= 0) {
+                // 用重新读到的最新订单金额对比(而非可能已被并发改价的旧 orderDTO 金额), 避免错标已付
+                && paid.compareTo(om.getOrderAmount()) >= 0) {
             // 直接更新数据库 (不走 orderService.paid 因为它要求 orderStatus = NEW)
             om.setPayStatus(PayStatusEnum.SUCCESS.getCode());
             om.setUpdateTime(new Date());

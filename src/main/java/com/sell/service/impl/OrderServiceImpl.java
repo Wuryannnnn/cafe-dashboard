@@ -154,6 +154,12 @@ public class OrderServiceImpl implements OrderService {
 
         //1. 查询商品（数量, 价格）
         for (OrderDetail orderDetail: orderDTO.getOrderDetailList()) {
+            // 入参校验: 商品ID与数量必须有效(前端可能传来缺字段的 items JSON),
+            // 否则后续算价 new BigDecimal(数量) / 扣库存会 NPE, 直接给可读报错
+            if (orderDetail.getProductId() == null || orderDetail.getProductId().isEmpty()
+                    || orderDetail.getProductQuantity() == null || orderDetail.getProductQuantity() <= 0) {
+                throw new SellException(ResultEnum.PARAM_ERROR.getCode(), "下单商品或数量不正确");
+            }
             ProductInfo productInfo =  productService.findOne(orderDetail.getProductId());
             if (productInfo == null) {
                 throw new SellException(ResultEnum.PRODUCT_NOT_EXIST);
@@ -665,9 +671,12 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        // WMS 退还原料 (按 BOM 反向入库, 失败不影响退款)
-        try { triggerWmsReturn(orderDTO); } catch (Exception e) {
-            log.warn("[WMS] return trigger failed for refunded order {}: {}", orderDTO.getOrderId(), e.getMessage());
+        // WMS 退还原料 (按 BOM 反向入库): 与成品库存返还一致, 仅当退款前【未完结】才退.
+        // 已完结=原料已做成成品交付顾客, 不应反向入库(否则原料库存虚高). 失败不影响退款.
+        if (!wasFinished) {
+            try { triggerWmsReturn(orderDTO); } catch (Exception e) {
+                log.warn("[WMS] return trigger failed for refunded order {}: {}", orderDTO.getOrderId(), e.getMessage());
+            }
         }
         return orderDTO;
     }
