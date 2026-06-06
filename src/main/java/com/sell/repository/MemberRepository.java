@@ -41,4 +41,37 @@ public interface MemberRepository extends JpaRepository<Member, Integer> {
     int deductBalance(@Param("memberId") Integer memberId,
                       @Param("amount") BigDecimal amount,
                       @Param("now") Date now);
+
+    /**
+     * 原子充值/加余额 (充值实付+赠送一起到账). 并发安全, 不丢账.
+     * 返回受影响行数 (1=成功, 0=会员不存在). clearAutomatically: 随后 findById 读到最新余额.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Member m SET m.balance = COALESCE(m.balance, 0) + :credit, m.updateTime = :now "
+            + "WHERE m.memberId = :memberId")
+    int addBalance(@Param("memberId") Integer memberId,
+                   @Param("credit") BigDecimal credit,
+                   @Param("now") Date now);
+
+    /**
+     * 原子调整余额 (delta 可正可负, 仅当调整后不为负才生效). 并发安全, 防丢失更新.
+     * 返回受影响行数 (1=成功, 0=会员不存在/调整后会变负).
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Member m SET m.balance = COALESCE(m.balance, 0) + :delta, m.updateTime = :now "
+            + "WHERE m.memberId = :memberId AND COALESCE(m.balance, 0) + :delta >= 0")
+    int adjustBalanceAtomic(@Param("memberId") Integer memberId,
+                            @Param("delta") BigDecimal delta,
+                            @Param("now") Date now);
+
+    /**
+     * 原子调整积分 (delta 可正可负, 仅当调整后不为负才生效). 并发安全, 防丢失更新.
+     * 返回受影响行数 (1=成功, 0=会员不存在/调整后会变负).
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Member m SET m.points = COALESCE(m.points, 0) + :delta, m.updateTime = :now "
+            + "WHERE m.memberId = :memberId AND COALESCE(m.points, 0) + :delta >= 0")
+    int adjustPointsAtomic(@Param("memberId") Integer memberId,
+                           @Param("delta") Integer delta,
+                           @Param("now") Date now);
 }

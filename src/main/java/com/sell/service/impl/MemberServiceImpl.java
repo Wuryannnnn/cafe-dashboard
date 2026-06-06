@@ -82,15 +82,17 @@ public class MemberServiceImpl implements MemberService {
     @Override
     @Transactional
     public BalanceRecord recharge(Integer memberId, BigDecimal payAmount, BigDecimal giveAmount, String operator, String remark) {
-        Member m = findOrThrow(memberId);
+        if (memberId == null || !memberRepository.existsById(memberId)) {
+            throw new SellException(1, "会员不存在");
+        }
         BigDecimal credit = (payAmount == null ? BigDecimal.ZERO : payAmount)
                 .add(giveAmount == null ? BigDecimal.ZERO : giveAmount);
         if (credit.compareTo(BigDecimal.ZERO) <= 0) {
             throw new SellException(1, "充值金额必须 > 0");
         }
-        m.setBalance(m.getBalance().add(credit));
-        m.setUpdateTime(new Date());
-        memberRepository.save(m);
+        // 原子加余额(并发安全, 不丢账); clearAutomatically 保证随后读到最新余额
+        memberRepository.addBalance(memberId, credit, new Date());
+        Member m = findOrThrow(memberId);
 
         BalanceRecord r = new BalanceRecord();
         r.setMemberId(memberId);
@@ -108,20 +110,23 @@ public class MemberServiceImpl implements MemberService {
     @Override
     @Transactional
     public BalanceRecord adjustBalance(Integer memberId, BigDecimal delta, String operator, String remark) {
-        Member m = findOrThrow(memberId);
-        BigDecimal newBal = m.getBalance().add(delta);
-        if (newBal.compareTo(BigDecimal.ZERO) < 0) {
+        if (memberId == null || !memberRepository.existsById(memberId)) {
+            throw new SellException(1, "会员不存在");
+        }
+        if (delta == null) {
+            throw new SellException(1, "调整金额不能为空");
+        }
+        // 原子调整(并发安全, 防丢失更新), 调整后不能为负
+        if (memberRepository.adjustBalanceAtomic(memberId, delta, new Date()) == 0) {
             throw new SellException(1, "调整后余额不能小于 0");
         }
-        m.setBalance(newBal);
-        m.setUpdateTime(new Date());
-        memberRepository.save(m);
+        Member m = findOrThrow(memberId);
 
         BalanceRecord r = new BalanceRecord();
         r.setMemberId(memberId);
         r.setRecordType(4);
         r.setAmount(delta);
-        r.setBalanceAfter(newBal);
+        r.setBalanceAfter(m.getBalance());
         r.setOperator(operator);
         r.setRemark(remark);
         r.setCreateTime(new Date());
@@ -160,20 +165,21 @@ public class MemberServiceImpl implements MemberService {
     @Override
     @Transactional
     public PointsRecord adjustPoints(Integer memberId, Integer delta, Integer recordType, String orderId, String remark) {
-        Member m = findOrThrow(memberId);
-        int newPts = m.getPoints() + (delta == null ? 0 : delta);
-        if (newPts < 0) {
+        if (memberId == null || !memberRepository.existsById(memberId)) {
+            throw new SellException(1, "会员不存在");
+        }
+        int d = (delta == null ? 0 : delta);
+        // 原子调整(并发安全, 防丢失更新), 调整后不能为负
+        if (memberRepository.adjustPointsAtomic(memberId, d, new Date()) == 0) {
             throw new SellException(1, "积分扣减后不能 < 0");
         }
-        m.setPoints(newPts);
-        m.setUpdateTime(new Date());
-        memberRepository.save(m);
+        Member m = findOrThrow(memberId);
 
         PointsRecord r = new PointsRecord();
         r.setMemberId(memberId);
         r.setRecordType(recordType != null ? recordType : 4);
-        r.setPoints(delta != null ? delta : 0);
-        r.setPointsAfter(newPts);
+        r.setPoints(d);
+        r.setPointsAfter(m.getPoints());
         r.setOrderId(orderId);
         r.setRemark(remark);
         r.setCreateTime(new Date());
