@@ -45,35 +45,47 @@ public class OrderServiceMakingReadyTest {
     }
 
     // ======== making() ========
+    // 注: making/ready/finish 现也以悲观行锁重读(findByOrderIdForUpdate)的最新状态为准,
+    // 守卫判断的是锁内 OrderMaster 状态而非传入 DTO, 故需 stub lock().
 
     @Test
     public void making_success() {
-        OrderDTO dto = buildDTO(OrderStatusEnum.NEW);
-        OrderDTO result = orderService.making(dto);
+        lock(OrderStatusEnum.NEW, PayStatusEnum.WAIT);
+        OrderDTO result = orderService.making(buildDTO(OrderStatusEnum.NEW));
         assertEquals(OrderStatusEnum.MAKING.getCode(), result.getOrderStatus());
     }
 
     @Test(expected = SellException.class)
     public void making_invalidStatus_finished() {
+        lock(OrderStatusEnum.FINISHED, PayStatusEnum.SUCCESS);
         orderService.making(buildDTO(OrderStatusEnum.FINISHED));
     }
 
     @Test(expected = SellException.class)
     public void making_invalidStatus_cancel() {
+        lock(OrderStatusEnum.CANCEL, PayStatusEnum.WAIT);
         orderService.making(buildDTO(OrderStatusEnum.CANCEL));
     }
 
     @Test(expected = SellException.class)
     public void making_invalidStatus_alreadyMaking() {
+        lock(OrderStatusEnum.MAKING, PayStatusEnum.WAIT);
         orderService.making(buildDTO(OrderStatusEnum.MAKING));
+    }
+
+    /** 回归: DTO 还是 NEW(并发前读到), 但锁内最新已被取消 → 必须拒绝, 不能把已取消订单改回制作. */
+    @Test(expected = SellException.class)
+    public void making_concurrentlyCancelled_rejected() {
+        lock(OrderStatusEnum.CANCEL, PayStatusEnum.WAIT);
+        orderService.making(buildDTO(OrderStatusEnum.NEW));
     }
 
     // ======== ready() ========
 
     @Test
     public void ready_success() {
-        OrderDTO dto = buildDTO(OrderStatusEnum.MAKING);
-        OrderDTO result = orderService.ready(dto);
+        lock(OrderStatusEnum.MAKING, PayStatusEnum.WAIT);
+        OrderDTO result = orderService.ready(buildDTO(OrderStatusEnum.MAKING));
         assertEquals(OrderStatusEnum.READY.getCode(), result.getOrderStatus());
         verify(pushMessageService).orderStatus(any());
         verify(webSocket).sendMessage(contains("order_ready"));
@@ -81,35 +93,51 @@ public class OrderServiceMakingReadyTest {
 
     @Test(expected = SellException.class)
     public void ready_invalidStatus_new() {
+        lock(OrderStatusEnum.NEW, PayStatusEnum.WAIT);
         orderService.ready(buildDTO(OrderStatusEnum.NEW));
+    }
+
+    /** 回归: DTO 还是 MAKING, 但锁内最新已被取消 → 必须拒绝. */
+    @Test(expected = SellException.class)
+    public void ready_concurrentlyCancelled_rejected() {
+        lock(OrderStatusEnum.CANCEL, PayStatusEnum.WAIT);
+        orderService.ready(buildDTO(OrderStatusEnum.MAKING));
     }
 
     // ======== finish() ========
 
     @Test
     public void finish_fromReady() {
-        OrderDTO dto = buildDTO(OrderStatusEnum.READY);
-        OrderDTO result = orderService.finish(dto);
+        lock(OrderStatusEnum.READY, PayStatusEnum.SUCCESS);
+        OrderDTO result = orderService.finish(buildDTO(OrderStatusEnum.READY));
         assertEquals(OrderStatusEnum.FINISHED.getCode(), result.getOrderStatus());
     }
 
     @Test
     public void finish_fromNew() {
-        OrderDTO dto = buildDTO(OrderStatusEnum.NEW);
-        OrderDTO result = orderService.finish(dto);
+        lock(OrderStatusEnum.NEW, PayStatusEnum.WAIT);
+        OrderDTO result = orderService.finish(buildDTO(OrderStatusEnum.NEW));
         assertEquals(OrderStatusEnum.FINISHED.getCode(), result.getOrderStatus());
     }
 
     @Test
     public void finish_fromMaking() {
-        OrderDTO dto = buildDTO(OrderStatusEnum.MAKING);
-        OrderDTO result = orderService.finish(dto);
+        lock(OrderStatusEnum.MAKING, PayStatusEnum.WAIT);
+        OrderDTO result = orderService.finish(buildDTO(OrderStatusEnum.MAKING));
         assertEquals(OrderStatusEnum.FINISHED.getCode(), result.getOrderStatus());
     }
 
     @Test(expected = SellException.class)
     public void finish_invalidStatus_cancelled() {
+        lock(OrderStatusEnum.CANCEL, PayStatusEnum.WAIT);
         orderService.finish(buildDTO(OrderStatusEnum.CANCEL));
+    }
+
+    /** 回归: 已完结订单不能再被完结而覆盖终态(锁内最新=FINISHED). */
+    @Test(expected = SellException.class)
+    public void finish_alreadyFinished_rejected() {
+        lock(OrderStatusEnum.FINISHED, PayStatusEnum.SUCCESS);
+        orderService.finish(buildDTO(OrderStatusEnum.READY));
     }
 
     // ======== cancel() ========

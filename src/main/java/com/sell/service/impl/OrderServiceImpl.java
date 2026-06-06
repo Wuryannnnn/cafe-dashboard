@@ -490,42 +490,36 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderDTO making(OrderDTO orderDTO) {
-        //判断订单状态: 只有新订单才能开始制作
-        if (!orderDTO.getOrderStatus().equals(OrderStatusEnum.NEW.getCode())) {
-            log.error("【开始制作】订单状态不正确, orderId={}, orderStatus={}", orderDTO.getOrderId(), orderDTO.getOrderStatus());
+        // 行锁重读: 以锁内最新状态为准, 防止并发(如同时被取消)用过期 DTO 覆盖订单状态
+        OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderDTO.getOrderId())
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
+        //只有新订单才能开始制作
+        if (!OrderStatusEnum.NEW.getCode().equals(orderMaster.getOrderStatus())) {
+            log.error("【开始制作】订单状态不正确, orderId={}, orderStatus={}", orderMaster.getOrderId(), orderMaster.getOrderStatus());
             throw new SellException(ResultEnum.ORDER_STATUS_ERROR);
         }
+        orderMaster.setOrderStatus(OrderStatusEnum.MAKING.getCode());
+        orderMasterRepository.save(orderMaster);
 
         orderDTO.setOrderStatus(OrderStatusEnum.MAKING.getCode());
-        OrderMaster orderMaster = new OrderMaster();
-        BeanUtils.copyProperties(orderDTO, orderMaster);
-        OrderMaster updateResult = orderMasterRepository.save(orderMaster);
-        if (updateResult == null) {
-            log.error("【开始制作】更新失败, orderMaster={}", orderMaster);
-            throw new SellException(ResultEnum.ORDER_UPDATE_FAIL);
-        }
-
         return orderDTO;
     }
 
     @Override
     @Transactional
     public OrderDTO ready(OrderDTO orderDTO) {
-        //判断订单状态: 只有制作中才能变为待取餐
-        if (!orderDTO.getOrderStatus().equals(OrderStatusEnum.MAKING.getCode())) {
-            log.error("【待取餐】订单状态不正确, orderId={}, orderStatus={}", orderDTO.getOrderId(), orderDTO.getOrderStatus());
+        // 行锁重读: 以锁内最新状态为准, 防止并发取消后仍被改成待取餐
+        OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderDTO.getOrderId())
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
+        //只有制作中才能变为待取餐
+        if (!OrderStatusEnum.MAKING.getCode().equals(orderMaster.getOrderStatus())) {
+            log.error("【待取餐】订单状态不正确, orderId={}, orderStatus={}", orderMaster.getOrderId(), orderMaster.getOrderStatus());
             throw new SellException(ResultEnum.ORDER_STATUS_ERROR);
         }
+        orderMaster.setOrderStatus(OrderStatusEnum.READY.getCode());
+        orderMasterRepository.save(orderMaster);
 
         orderDTO.setOrderStatus(OrderStatusEnum.READY.getCode());
-        OrderMaster orderMaster = new OrderMaster();
-        BeanUtils.copyProperties(orderDTO, orderMaster);
-        OrderMaster updateResult = orderMasterRepository.save(orderMaster);
-        if (updateResult == null) {
-            log.error("【待取餐】更新失败, orderMaster={}", orderMaster);
-            throw new SellException(ResultEnum.ORDER_UPDATE_FAIL);
-        }
-
         //推送取餐通知
         pushMessageService.orderStatus(orderDTO);
         //发送websocket消息通知前端
@@ -537,24 +531,21 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderDTO finish(OrderDTO orderDTO) {
-        //判断订单状态: 待取餐 或 新订单(兼容直接完结) 才能完结
-        if (!orderDTO.getOrderStatus().equals(OrderStatusEnum.READY.getCode())
-                && !orderDTO.getOrderStatus().equals(OrderStatusEnum.NEW.getCode())
-                && !orderDTO.getOrderStatus().equals(OrderStatusEnum.MAKING.getCode())) {
-            log.error("【完结订单】订单状态不正确, orderId={}, orderStatus={}", orderDTO.getOrderId(), orderDTO.getOrderStatus());
+        // 行锁重读: 以锁内最新状态为准, 防止已完结/已取消/已退款订单被重复完结而覆盖终态
+        OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderDTO.getOrderId())
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
+        //待取餐 / 新订单 / 制作中 才能完结(兼容直接完结)
+        Integer st = orderMaster.getOrderStatus();
+        if (!OrderStatusEnum.READY.getCode().equals(st)
+                && !OrderStatusEnum.NEW.getCode().equals(st)
+                && !OrderStatusEnum.MAKING.getCode().equals(st)) {
+            log.error("【完结订单】订单状态不正确, orderId={}, orderStatus={}", orderMaster.getOrderId(), st);
             throw new SellException(ResultEnum.ORDER_STATUS_ERROR);
         }
+        orderMaster.setOrderStatus(OrderStatusEnum.FINISHED.getCode());
+        orderMasterRepository.save(orderMaster);
 
-        //修改订单状态
         orderDTO.setOrderStatus(OrderStatusEnum.FINISHED.getCode());
-        OrderMaster orderMaster = new OrderMaster();
-        BeanUtils.copyProperties(orderDTO, orderMaster);
-        OrderMaster updateResult = orderMasterRepository.save(orderMaster);
-        if (updateResult == null) {
-            log.error("【完结订单】更新失败, orderMaster={}", orderMaster);
-            throw new SellException(ResultEnum.ORDER_UPDATE_FAIL);
-        }
-
         //推送微信模版消息
         pushMessageService.orderStatus(orderDTO);
 
