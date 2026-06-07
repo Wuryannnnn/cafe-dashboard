@@ -39,7 +39,9 @@ public class PayServiceImpl implements PayService {
         payRequest.setOrderAmount(orderDTO.getOrderAmount().doubleValue());
         payRequest.setOrderId(orderDTO.getOrderId());
         payRequest.setOrderName(ORDER_NAME);
-        payRequest.setPayTypeEnum(BestPayTypeEnum.WXPAY_MWEB);
+        // 微信扫码点餐 = 公众号内 JSAPI 支付: best-pay-sdk 里为 WXPAY_MP(返回 appId/timeStamp/nonceStr/package/paySign,
+        // 前端用 WeixinJSBridge.getBrandWCPayRequest 调起). 需要真实 openid(经 snsapi_base 网页授权获得).
+        payRequest.setPayTypeEnum(BestPayTypeEnum.WXPAY_MP);
         log.info("【微信支付】发起支付, request={}", JsonUtil.toJson(payRequest));
 
         PayResponse payResponse = bestPayService.pay(payRequest);

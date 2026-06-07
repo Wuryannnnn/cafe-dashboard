@@ -42,7 +42,7 @@ public class PayServiceImplWechatTest {
     }
 
     @Test
-    public void create_setsWxpayMwebAndForwardsOrderFields() {
+    public void create_setsWxpayJsapiAndForwardsOrderFields() {
         PayResponse stub = new PayResponse();
         when(bestPayService.pay(any(PayRequest.class))).thenReturn(stub);
 
@@ -51,7 +51,8 @@ public class PayServiceImplWechatTest {
         ArgumentCaptor<PayRequest> captor = ArgumentCaptor.forClass(PayRequest.class);
         verify(bestPayService).pay(captor.capture());
         PayRequest sent = captor.getValue();
-        assertThat(sent.getPayTypeEnum()).isEqualTo(BestPayTypeEnum.WXPAY_MWEB);
+        // 微信扫码点餐走 JSAPI(公众号内支付), best-pay-sdk 里为 WXPAY_MP
+        assertThat(sent.getPayTypeEnum()).isEqualTo(BestPayTypeEnum.WXPAY_MP);
         assertThat(sent.getOpenid()).isEqualTo("openid-wx");
         assertThat(sent.getOrderId()).isEqualTo("WX_ORDER_1");
         assertThat(sent.getOrderAmount()).isEqualTo(8.88d);

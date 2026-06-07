@@ -50,6 +50,13 @@ export function H5OrderPage() {
   const [submitting, setSubmitting] = useState(false)
   const isSnappingRef = useRef(false)
 
+  // 微信扫码点餐: 顾客经 /sell/wechat/authorize 网页授权(snsapi_base)后, 回跳本页 URL 会带 ?openid=<真实openid>.
+  // 本会话存一份, 下单/支付复用. 非微信环境(普通浏览器/本地)拿不到, 下单时退回 guest(仅供浏览/线下收银, 微信在线支付不可用).
+  useEffect(() => {
+    const oid = new URLSearchParams(window.location.search).get('openid')
+    if (oid) sessionStorage.setItem('wx_openid', oid)
+  }, [])
+
   const { data: cfg } = useQuery({
     queryKey: ['h5-shop-config'],
     queryFn: async () => {
@@ -166,7 +173,8 @@ export function H5OrderPage() {
     const fd = new URLSearchParams()
     fd.append('name', '顾客')
     fd.append('phone', '00000000000')
-    fd.append('openid', 'guest_' + Date.now())
+    // 优先用网页授权拿到的真实 openid(微信在线支付必需); 拿不到才退回 guest
+    fd.append('openid', sessionStorage.getItem('wx_openid') || 'guest_' + Date.now())
     fd.append('items', JSON.stringify(items))
     fd.append('diningType', String(diningType))
     fd.append('tableNumber', tableNumber)
