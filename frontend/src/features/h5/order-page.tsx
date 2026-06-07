@@ -50,11 +50,16 @@ export function H5OrderPage() {
   const [submitting, setSubmitting] = useState(false)
   const isSnappingRef = useRef(false)
 
-  // 微信扫码点餐: 顾客经 /sell/wechat/authorize 网页授权(snsapi_base)后, 回跳本页 URL 会带 ?openid=<真实openid>.
-  // 本会话存一份, 下单/支付复用. 非微信环境(普通浏览器/本地)拿不到, 下单时退回 guest(仅供浏览/线下收银, 微信在线支付不可用).
+  // 一码两扫入口: 桌码指向本页(中立). 用哪个 App 扫就在哪个 App 里付——
+  // - 微信扫进来: 先过公众号网页授权(snsapi_base)拿真实 openid(JSAPI 支付必需), 回跳本页带 ?openid=, 一会话只跳一次防循环;
+  // - 支付宝/普通浏览器扫进来: 不需要 openid, 直接进, 下单时退回 guest(不影响支付宝/浏览器支付).
   useEffect(() => {
     const oid = new URLSearchParams(window.location.search).get('openid')
-    if (oid) sessionStorage.setItem('wx_openid', oid)
+    if (oid) { sessionStorage.setItem('wx_openid', oid); return }
+    if (detectPayEnv() === 'wechat' && !sessionStorage.getItem('wx_openid') && !sessionStorage.getItem('wx_auth_tried')) {
+      sessionStorage.setItem('wx_auth_tried', '1')
+      window.location.replace('/sell/wechat/authorize?returnUrl=' + encodeURIComponent(window.location.href))
+    }
   }, [])
 
   const { data: cfg } = useQuery({
@@ -676,6 +681,15 @@ function CartDetail({
   )
 }
 
+/** 识别当前所在 App 环境, 决定能用哪种在线支付 (微信内屏蔽支付宝, 反之亦然). */
+type PayEnv = 'wechat' | 'alipay' | 'other'
+function detectPayEnv(): PayEnv {
+  const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '').toLowerCase()
+  if (ua.includes('micromessenger')) return 'wechat'
+  if (ua.includes('alipayclient')) return 'alipay'
+  return 'other'
+}
+
 function SuccessPage({
   pickupNumber, diningType, tableNumber, orderId, onPay,
 }: {
@@ -685,6 +699,11 @@ function SuccessPage({
   orderId: string
   onPay: (t: 0 | 1) => void
 }) {
+  // 一码两扫: 用哪个 App 扫码进来, 就只给对应的支付方式(微信里给微信付, 支付宝里给支付宝付);
+  // 普通浏览器两个都给. 想换支付方式 = 用另一个 App 扫同一张桌码.
+  const env = detectPayEnv()
+  const showWechat = env === 'wechat' || env === 'other'
+  const showAlipay = env === 'alipay' || env === 'other'
   return (
     <div className='flex min-h-dvh flex-col items-center justify-start bg-stone-50 px-6 pt-24 text-center'>
       <p className='text-stone-400 text-xs font-semibold uppercase tracking-wider'>您的取餐号</p>
@@ -694,15 +713,25 @@ function SuccessPage({
       <p className='text-stone-500 mt-1 text-sm'>{diningType === 1 ? '外带' : '堂食'}{tableNumber ? ' · 桌号 ' + tableNumber : ''}</p>
 
       <div className='mt-12 w-full'>
-        <p className='text-stone-500 mb-4 text-sm'>请选择支付方式</p>
+        <p className='text-stone-500 mb-4 text-sm'>{env === 'other' ? '请选择支付方式' : '请确认支付'}</p>
         <div className='flex justify-center gap-3'>
-          <button onClick={() => onPay(0)} className='rounded-xl border-2 border-emerald-500 bg-white px-6 py-3 text-sm font-semibold text-emerald-600 active:scale-95'>
-            微信支付
-          </button>
-          <button onClick={() => onPay(1)} className='rounded-xl border-2 border-blue-500 bg-white px-6 py-3 text-sm font-semibold text-blue-600 active:scale-95'>
-            支付宝
-          </button>
+          {showWechat && (
+            <button onClick={() => onPay(0)} className='rounded-xl border-2 border-emerald-500 bg-white px-6 py-3 text-sm font-semibold text-emerald-600 active:scale-95'>
+              微信支付
+            </button>
+          )}
+          {showAlipay && (
+            <button onClick={() => onPay(1)} className='rounded-xl border-2 border-blue-500 bg-white px-6 py-3 text-sm font-semibold text-blue-600 active:scale-95'>
+              支付宝
+            </button>
+          )}
         </div>
+        {env === 'wechat' && (
+          <p className='text-stone-400 mt-3 text-xs'>想用支付宝付？请用支付宝扫桌上的码</p>
+        )}
+        {env === 'alipay' && (
+          <p className='text-stone-400 mt-3 text-xs'>想用微信付？请用微信扫桌上的码</p>
+        )}
       </div>
 
       <Link
