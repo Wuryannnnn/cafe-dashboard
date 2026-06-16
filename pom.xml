@@ -88,6 +88,13 @@
 			<version>4.6.0</version>
 		</dependency>
 
+		<!-- 微信支付 APIv3 官方 SDK (小程序支付; 公钥模式) -->
+		<dependency>
+			<groupId>com.github.wechatpay-apiv3</groupId>
+			<artifactId>wechatpay-java</artifactId>
+			<version>0.2.17</version>
+		</dependency>
+
 		<dependency>
 			<groupId>cn.springboot</groupId>
 			<artifactId>best-pay-sdk</artifactId>

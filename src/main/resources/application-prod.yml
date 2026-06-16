@@ -41,6 +41,19 @@ wechat:
   notifyUrl: ${WECHAT_NOTIFY_URL:}
   templateId:
     orderStatus: ${WECHAT_TPL_ORDER_STATUS:}
+  # ===== 小程序 (登录 + APIv3 支付) =====
+  # 凭据齐全后设 WECHAT_MINI_ENABLED=true 才装配 APIv3 Bean.
+  mini:
+    enabled: ${WECHAT_MINI_ENABLED:false}
+    appId: ${WECHAT_MINI_APPID:}
+    appSecret: ${WECHAT_MINI_APPSECRET:}
+    mchId: ${WECHAT_MINI_MCH_ID:}
+    merchantSerialNo: ${WECHAT_MINI_MERCHANT_SERIAL:}
+    privateKeyPath: ${WECHAT_MINI_PRIVATE_KEY_PATH:}
+    apiV3Key: ${WECHAT_MINI_APIV3_KEY:}
+    wechatPayPublicKeyId: ${WECHAT_MINI_PUBKEY_ID:}
+    wechatPayPublicKeyPath: ${WECHAT_MINI_PUBKEY_PATH:}
+    notifyUrl: ${WECHAT_MINI_NOTIFY_URL:}
 
 alipay:
   sandbox: ${ALIPAY_SANDBOX:false}   # 生产默认关沙箱(真实扣款)

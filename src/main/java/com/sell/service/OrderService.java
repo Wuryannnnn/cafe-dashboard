@@ -39,6 +39,9 @@ public interface OrderService {
     /** 退款 (已支付订单, 状态变为已退款). */
     OrderDTO refund(OrderDTO orderDTO);
 
+    /** 行锁写入微信交易号 (小程序 APIv3 回调用, 作退款分流依据). */
+    OrderDTO saveTransactionId(String orderId, String transactionId);
+
     /** 改价 (修改订单金额). */
     OrderDTO updateAmount(String orderId, java.math.BigDecimal newAmount);
 

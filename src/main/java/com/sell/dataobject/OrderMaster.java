@@ -48,6 +48,9 @@ public class OrderMaster {
     /** 支付方式, 默认微信支付. */
     private Integer payType = PayTypeEnum.WECHAT.getCode();
 
+    /** 小程序 APIv3 微信支付交易号(回调写入); 退款分流与发货上报范围的判定依据. */
+    private String wxTransactionId;
+
     /** 就餐方式, 0堂食 1外带. */
     private Integer diningType = DiningTypeEnum.DINE_IN.getCode();
 

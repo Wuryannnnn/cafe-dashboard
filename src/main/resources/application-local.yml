@@ -41,6 +41,19 @@ wechat:
   notifyUrl: http://localhost:8080/sell/pay/notify
   templateId:
     orderStatus: test
+  # ===== 小程序 (登录 + APIv3 支付) =====
+  # 本地无凭据: enabled=false → 不装配 APIv3 Bean, 应用照常启动; 支付发起返回可读错误.
+  mini:
+    enabled: false
+    appId:
+    appSecret:
+    mchId:
+    merchantSerialNo:
+    privateKeyPath:
+    apiV3Key:
+    wechatPayPublicKeyId:
+    wechatPayPublicKeyPath:
+    notifyUrl: http://localhost:8080/sell/pay/mini/notify
 
 # ===== 支付宝 =====
 # 测试账号: 到 open.alipay.com → 开发者中心 → 沙箱, 一键生成
