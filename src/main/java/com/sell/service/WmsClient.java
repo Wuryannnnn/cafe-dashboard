@@ -305,10 +305,28 @@ public class WmsClient {
             body.add("details", buildDetails(details));
             // 直接入库 endpoint, 一步把库存加回去
             String resp = safePost("/wms/receiptOrder/warehousing", body.toString());
-            log.info("[WMS] receipt (refund) created for order {}", bizOrderNo);
-            return resp != null;
+            // WMS 业务结果是 HTTP 200 + body.code: 不能只看 resp!=null(那样 200+缺料错误也算成功),
+            // 必须解析 code==200 才算真入库, 否则会误报"原料已退还"而实际没退, 导致原料库存虚低.
+            boolean ok = isBizOk(resp);
+            if (ok) {
+                log.info("[WMS] receipt (refund) created for order {}", bizOrderNo);
+            } else {
+                log.warn("[WMS] receipt (refund) 业务失败 for order {}: {}", bizOrderNo, extractMessage(resp));
+            }
+            return ok;
         } catch (Exception e) {
             log.warn("[WMS] createReceipt failed for order {}: {}", bizOrderNo, e.getMessage());
+            return false;
+        }
+    }
+
+    /** WMS 以 HTTP 200 + body.code 表达业务结果; 判定是否真正成功(code==200). */
+    private boolean isBizOk(String body) {
+        if (body == null || body.isEmpty()) return false;
+        try {
+            com.google.gson.JsonObject o = com.google.gson.JsonParser.parseString(body).getAsJsonObject();
+            return o.has("code") && !o.get("code").isJsonNull() && o.get("code").getAsInt() == 200;
+        } catch (Exception e) {
             return false;
         }
     }

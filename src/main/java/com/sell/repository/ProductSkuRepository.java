@@ -14,13 +14,13 @@ public interface ProductSkuRepository extends JpaRepository<ProductSku, String> 
 
     List<ProductSku> findByProductIdIn(List<String> productIds);
 
-    /** 原子条件扣减 SKU 库存 (仅 skuStock 非空且充足时才扣). 返回受影响行数 (1=成功, 0=不足/不存在/未跟踪库存). */
+    /** 原子条件扣减 SKU 库存 (仅 skuStock 非空且充足时才扣). 返回受影响行数 (1=成功, 0=不足/不存在/未跟踪库存). 同商品级, 刻意不加 clearAutomatically(避免 clear 丢弃同事务未 flush 的订单写入). */
     @Modifying
     @Query("UPDATE ProductSku s SET s.skuStock = s.skuStock - :quantity "
             + "WHERE s.skuId = :skuId AND s.skuStock >= :quantity")
     int decreaseSkuStock(@Param("skuId") String skuId, @Param("quantity") Integer quantity);
 
-    /** 原子返还 SKU 库存 (取消/退款); 仅对跟踪库存(skuStock 非空)的 SKU 生效. */
+    /** 原子返还 SKU 库存 (取消/退款); 仅对跟踪库存(skuStock 非空)的 SKU 生效. 同上, 刻意不加 clearAutomatically. */
     @Modifying
     @Query("UPDATE ProductSku s SET s.skuStock = s.skuStock + :quantity "
             + "WHERE s.skuId = :skuId AND s.skuStock IS NOT NULL")
