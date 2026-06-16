@@ -1,26 +1,25 @@
 package com.sell.config;
 
-import com.lly835.bestpay.config.AliPayConfig;
 import com.lly835.bestpay.config.WxPayConfig;
 import com.lly835.bestpay.service.impl.BestPayServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
+/**
+ * 公众号 best-pay 微信支付 Bean (历史/存量 + 历史单退款). 支付宝已下线.
+ * 小程序新支付走 APIv3 (WechatPayApiV3Config), 与此并存.
+ */
 @Component
 public class WechatPayConfig {
 
     @Autowired
     private WechatAccountConfig accountConfig;
 
-    @Autowired
-    private AliPayAccountConfig aliPayAccountConfig;
-
     @Bean
     public BestPayServiceImpl bestPayService() {
         BestPayServiceImpl bestPayService = new BestPayServiceImpl();
         bestPayService.setWxPayConfig(wxPayConfig());
-        bestPayService.setAliPayConfig(aliPayConfig());
         return bestPayService;
     }
 
@@ -34,18 +33,5 @@ public class WechatPayConfig {
         wxPayConfig.setKeyPath(accountConfig.getKeyPath());
         wxPayConfig.setNotifyUrl(accountConfig.getNotifyUrl());
         return wxPayConfig;
-    }
-
-    @Bean
-    public AliPayConfig aliPayConfig() {
-        AliPayConfig aliPayConfig = new AliPayConfig();
-        aliPayConfig.setAppId(aliPayAccountConfig.getAppId());
-        aliPayConfig.setPrivateKey(aliPayAccountConfig.getPrivateKey());
-        aliPayConfig.setAliPayPublicKey(aliPayAccountConfig.getAliPayPublicKey());
-        aliPayConfig.setNotifyUrl(aliPayAccountConfig.getNotifyUrl());
-        aliPayConfig.setReturnUrl(aliPayAccountConfig.getReturnUrl());
-        // 沙箱: bestpay SDK 开了之后会自动切到 openapi.alipaydev.com
-        aliPayConfig.setSandbox(aliPayAccountConfig.isSandbox());
-        return aliPayConfig;
     }
 }

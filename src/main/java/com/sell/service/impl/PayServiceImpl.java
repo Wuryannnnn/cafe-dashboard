@@ -50,22 +50,6 @@ public class PayServiceImpl implements PayService {
     }
 
     @Override
-    public PayResponse createAlipay(OrderDTO orderDTO) {
-        PayRequest payRequest = new PayRequest();
-        payRequest.setOrderAmount(orderDTO.getOrderAmount().doubleValue());
-        payRequest.setOrderId(orderDTO.getOrderId());
-        payRequest.setOrderName(ORDER_NAME);
-        // ALIPAY_WAP = 手机网页支付, 用户跳转到支付宝页面自己登录付款
-        // (不要用 ALIPAY_H5, bestpay 里那个其实是「当面付」需要预填 buyer_id)
-        payRequest.setPayTypeEnum(BestPayTypeEnum.ALIPAY_WAP);
-        log.info("【支付宝支付】发起支付, request={}", JsonUtil.toJson(payRequest));
-
-        PayResponse payResponse = bestPayService.pay(payRequest);
-        log.info("【支付宝支付】发起支付, response={}", JsonUtil.toJson(payResponse));
-        return payResponse;
-    }
-
-    @Override
     public PayResponse notify(String notifyData) {
         PayResponse payResponse = bestPayService.asyncNotify(notifyData);
         log.info("【微信支付】异步通知, payResponse={}", JsonUtil.toJson(payResponse));
@@ -90,35 +74,6 @@ public class PayServiceImpl implements PayService {
                     payResponse.getOrderAmount(),
                     orderDTO.getOrderAmount());
             throw new SellException(ResultEnum.WXPAY_NOTIFY_MONEY_VERIFY_ERROR);
-        }
-
-        orderService.paid(orderDTO);
-        return payResponse;
-    }
-
-    @Override
-    public PayResponse alipayNotify(String notifyData) {
-        PayResponse payResponse = bestPayService.asyncNotify(notifyData);
-        log.info("【支付宝支付】异步通知, payResponse={}", JsonUtil.toJson(payResponse));
-
-        OrderDTO orderDTO = orderService.findOne(payResponse.getOrderId());
-        if (orderDTO == null) {
-            log.error("【支付宝支付】异步通知, 订单不存在, orderId={}", payResponse.getOrderId());
-            throw new SellException(ResultEnum.ORDER_NOT_EXIST);
-        }
-
-        //幂等: 已支付订单的重复通知直接返回
-        if (PayStatusEnum.SUCCESS.getCode().equals(orderDTO.getPayStatus())) {
-            log.info("【支付宝支付】异步通知, 订单已支付, 幂等跳过, orderId={}", payResponse.getOrderId());
-            return payResponse;
-        }
-
-        if (!MathUtil.equals(payResponse.getOrderAmount(), orderDTO.getOrderAmount().doubleValue())) {
-            log.error("【支付宝支付】异步通知, 订单金额不一致, orderId={}, 支付宝通知金额={}, 系统金额={}",
-                    payResponse.getOrderId(),
-                    payResponse.getOrderAmount(),
-                    orderDTO.getOrderAmount());
-            throw new SellException(ResultEnum.ALIPAY_NOTIFY_VERIFY_ERROR);
         }
 
         orderService.paid(orderDTO);
