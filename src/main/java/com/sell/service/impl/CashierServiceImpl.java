@@ -67,6 +67,7 @@ public class CashierServiceImpl implements CashierService {
     @Override
     @Transactional
     public OrderDTO offlinePay(String orderId, Integer methodId, String operator) {
+        assertAcceptsPayment(orderId);
         OrderDTO orderDTO = orderService.findOne(orderId);
         addPaymentRecordInternal(orderId, methodId, orderDTO.getOrderAmount(), operator);
         return markPaidIfFullySettled(orderDTO);
@@ -78,9 +79,26 @@ public class CashierServiceImpl implements CashierService {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new SellException(1, "支付金额必须 > 0");
         }
+        assertAcceptsPayment(orderId);
         OrderDTO orderDTO = orderService.findOne(orderId);
         addPaymentRecordInternal(orderId, methodId, amount, operator);
         return markPaidIfFullySettled(orderDTO);
+    }
+
+    /**
+     * 收款前校验(行锁): 已取消/已退款订单不能再记收款; 已结清(payStatus!=WAIT)的也不再追加.
+     * 否则可对终态订单凭空追加收款流水, 虚增收款报表, 甚至把已退款单重标为已支付.
+     */
+    private void assertAcceptsPayment(String orderId) {
+        OrderMaster om = orderMasterRepository.findByOrderIdForUpdate(orderId)
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
+        if (OrderStatusEnum.CANCEL.getCode().equals(om.getOrderStatus())
+                || OrderStatusEnum.REFUNDED.getCode().equals(om.getOrderStatus())) {
+            throw new SellException(ResultEnum.ORDER_STATUS_ERROR);
+        }
+        if (!PayStatusEnum.WAIT.getCode().equals(om.getPayStatus())) {
+            throw new SellException(ResultEnum.ORDER_PAY_STATUS_ERROR);
+        }
     }
 
     private void addPaymentRecordInternal(String orderId, Integer methodId, BigDecimal amount, String operator) {
@@ -105,7 +123,8 @@ public class CashierServiceImpl implements CashierService {
                 && PayStatusEnum.WAIT.getCode().equals(om.getPayStatus())
                 // 用重新读到的最新订单金额对比(而非可能已被并发改价的旧 orderDTO 金额), 避免错标已付
                 && paid.compareTo(om.getOrderAmount()) >= 0) {
-            // 直接更新数据库 (不走 orderService.paid 因为它要求 orderStatus = NEW)
+            // 直接更新数据库, 不走 orderService.paid: 收银台是拆分/累计收款, paid 只做 WAIT→SUCCESS
+            // 一次性翻转(且会触发自动接单/发货上报等小程序逻辑), 不适合收银台分笔结算场景.
             om.setPayStatus(PayStatusEnum.SUCCESS.getCode());
             om.setUpdateTime(new Date());
             orderMasterRepository.save(om);

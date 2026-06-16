@@ -79,6 +79,22 @@ public class OrderSwitchTest {
         orderService.create(buildOrder()); // 应抛"扫码点餐已关闭"
     }
 
+    /**
+     * 扫码点餐总开关关闭时, 收银台手动建单(buyerOpenid=cashier-manual)仍须放行——
+     * 否则店主一关扫码点餐, 收银台开单会被一并锁死. 回归 B1.
+     */
+    @Test
+    public void qrOrderOff_cashierManualStillWorks() {
+        seedProduct();
+        setSwitch("switch.qrOrder", false);
+        OrderDTO dto = buildOrder();
+        dto.setBuyerOpenid("cashier-manual"); // 收银台来源
+        OrderDTO result = orderService.create(dto); // 不应抛异常
+        assertNotNull("收银台手动建单应不受扫码点餐开关影响", result.getOrderId());
+        OrderDTO persisted = orderService.findOne(result.getOrderId());
+        assertEquals(OrderStatusEnum.NEW.getCode(), persisted.getOrderStatus());
+    }
+
     @Test
     public void autoAccept_payAfter_createGoesMaking() {
         seedProduct();

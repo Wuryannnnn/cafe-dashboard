@@ -86,6 +86,17 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private com.sell.repository.OrderPaymentRecordRepository orderPaymentRecordRepository;
 
+    @Autowired
+    private com.sell.repository.ProductInfoRepository productInfoRepository;
+
+    // @Lazy 打破与 MiniPayService 的循环依赖 (MiniPayService.notify 依赖 OrderService)
+    @org.springframework.context.annotation.Lazy
+    @Autowired
+    private com.sell.service.MiniPayService miniPayService;
+
+    @Autowired
+    private com.sell.service.MiniShippingService miniShippingService;
+
     /**
      * 记一条库存流水 (订单消耗/返还), 关联 orderId 便于对账.
      * recordType: 2=出库(下单消耗), 1=入库(取消/退款返还). delta 为带符号变动量.
@@ -122,9 +133,11 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderDTO create(OrderDTO orderDTO) {
 
-        // 扫码点餐总开关(switch.qrOrder): 关闭则拒绝顾客下单 (默认开, 未配置不拦, 不影响既有行为).
-        // 仅 BuyerOrderController 走本方法, 故只作用于顾客扫码单, 不影响收银台.
-        if (!isSwitchOn("switch.qrOrder", true)) {
+        // 扫码点餐总开关(switch.qrOrder): 关闭则拒绝【顾客扫码】下单 (默认开, 未配置不拦).
+        // 收银台手动建单(manualCreateOrder 写死 buyerOpenid=cashier-manual)也走本方法, 必须放行——
+        // 否则店主一关扫码点餐, 收银台手动开单会被一并锁死. 故仅拦截非收银台来源的单.
+        boolean cashierOrder = "cashier-manual".equals(orderDTO.getBuyerOpenid());
+        if (!cashierOrder && !isSwitchOn("switch.qrOrder", true)) {
             throw new SellException(ResultEnum.PARAM_ERROR.getCode(), "扫码点餐已关闭, 暂不接受下单");
         }
 
@@ -252,7 +265,13 @@ public class OrderServiceImpl implements OrderService {
             orderDTO.setOrderStatus(OrderStatusEnum.MAKING.getCode());
         }
 
-        //发送websocket消息
+        // WMS 出库 (按 BOM 配方扣减原料) —— 必须在 websocket/打印【之前】:
+        // - OUT_OF_STOCK: WMS 原子扣减失败 → 抛异常回滚整个订单
+        // - RETRYABLE / WMS 未配置: 入补偿队列, 订单照常完成
+        // 若放在通知/打印之后, 缺料回滚时小票已打、KDS 已收到, 会出现"幽灵订单"(订单没了票却打了).
+        triggerWmsShipment(orderDTO);
+
+        //发送websocket消息(到此订单已确定入库, 通知/打印不会再被回滚)
         webSocket.sendMessage(orderDTO.getOrderId());
 
         //按工位分单打印小票(异步, 不阻塞下单)
@@ -260,12 +279,26 @@ public class OrderServiceImpl implements OrderService {
         //打印顾客消费小票
         printerService.printCustomerReceipt(orderDTO);
 
-        // WMS 出库 (按 BOM 配方扣减原料)
-        // - OUT_OF_STOCK: WMS 原子扣减失败 → 回滚整个订单
-        // - RETRYABLE / WMS 未配置: 入补偿队列, 订单照常完成
-        triggerWmsShipment(orderDTO);
-
         return orderDTO;
+    }
+
+    /**
+     * 退款/取消后返还商品级库存 —— best effort, 绝不让它中断退款.
+     * 不调 productService.increaseStock: 它是 @Transactional, 商品被硬删时 increaseStockAtomic 返回 0 行
+     * 会抛 PRODUCT_NOT_EXIST, 把整个事务标记 rollback-only, 连"已退款"标记一起回滚 → 钱已退但订单可再退.
+     * 这里直接走原子 UPDATE, 缺行(商品已删)只记一条告警, 让退款/取消照常落库; 库存偏差留待人工对账.
+     */
+    private void restoreProductStockBestEffort(List<CartDTO> cartDTOList) {
+        for (CartDTO c : cartDTOList) {
+            try {
+                int updated = productInfoRepository.increaseStockAtomic(c.getProductId(), c.getProductQuantity());
+                if (updated == 0) {
+                    log.warn("[库存返还] 商品不存在(可能已删除), 跳过返还 productId={}", c.getProductId());
+                }
+            } catch (Exception e) {
+                log.warn("[库存返还] 返还失败 productId={}: {}", c.getProductId(), e.getMessage());
+            }
+        }
     }
 
     /** 返还订单中各 SKU 的库存 (仅对跟踪库存的 SKU; 与下单时的 SKU 扣减对称). */
@@ -383,7 +416,10 @@ public class OrderServiceImpl implements OrderService {
         java.util.Map<Long, java.math.BigDecimal> need = new java.util.HashMap<>();
         java.util.Map<Long, String> nameMap = new java.util.HashMap<>();
         for (OrderDetail d : orderDTO.getOrderDetailList()) {
+            if (d.getProductQuantity() == null) continue;
             for (com.sell.dataobject.Recipe r : recipeService.findByProductSku(d.getProductId(), d.getSkuId())) {
+                // 配方未配齐(原料ID或用量为空)就跳过, 与 buildShipmentDetails/triggerWmsReturn 一致, 防 NPE
+                if (r.getWmsItemId() == null || r.getQuantity() == null) continue;
                 java.math.BigDecimal req = r.getQuantity().multiply(java.math.BigDecimal.valueOf(d.getProductQuantity()));
                 need.merge(r.getWmsItemId(), req, java.math.BigDecimal::add);
                 nameMap.putIfAbsent(r.getWmsItemId(), r.getWmsItemName());
@@ -486,7 +522,7 @@ public class OrderServiceImpl implements OrderService {
         List<CartDTO> cartDTOList = orderDTO.getOrderDetailList().stream()
                 .map(e -> new CartDTO(e.getProductId(), e.getProductQuantity()))
                 .collect(Collectors.toList());
-        productService.increaseStock(cartDTOList);
+        restoreProductStockBestEffort(cartDTOList);
         restoreSkuStock(orderDTO);
         for (OrderDetail d : orderDTO.getOrderDetailList()) {
             writeStockLedger(1, orderDTO.getOrderId(), d, d.getProductQuantity() == null ? 0 : d.getProductQuantity());
@@ -603,6 +639,16 @@ public class OrderServiceImpl implements OrderService {
         }
         orderDTO.setPayStatus(PayStatusEnum.SUCCESS.getCode());
 
+        // 小程序 APIv3 支付成功 → 异步上报发货(合规); 仅有微信交易号的小程序单, 现金/收银台/历史单跳过
+        if (orderMaster.getWxTransactionId() != null && !orderMaster.getWxTransactionId().isEmpty()) {
+            try {
+                miniShippingService.reportAsync(orderMaster.getOrderId(),
+                        orderMaster.getBuyerOpenid(), orderMaster.getWxTransactionId());
+            } catch (Exception e) {
+                log.warn("[发货上报] 触发失败 orderId={}: {}", orderMaster.getOrderId(), e.getMessage());
+            }
+        }
+
         return orderDTO;
     }
 
@@ -645,7 +691,13 @@ public class OrderServiceImpl implements OrderService {
                 .findByOrderIdOrderByPaymentIdAsc(orderMaster.getOrderId()).isEmpty();
         if (!offlinePaid) {
             try {
-                payService.refund(orderDTO);
+                // 退款渠道分流: 有 wxTransactionId = 小程序 APIv3 新单 → APIv3 退款;
+                // 否则 = 公众号 best-pay/支付宝历史单 → 旧 best-pay 退款分支(保留供历史单).
+                if (orderMaster.getWxTransactionId() != null && !orderMaster.getWxTransactionId().isEmpty()) {
+                    miniPayService.refund(orderMaster.getOrderId(), orderMaster.getOrderAmount());
+                } else {
+                    payService.refund(orderDTO);
+                }
             } catch (Exception e) {
                 log.error("【订单退款】支付通道退款失败, orderId={}, msg={}",
                         orderMaster.getOrderId(), e.getMessage());
@@ -671,7 +723,7 @@ public class OrderServiceImpl implements OrderService {
             List<CartDTO> cartDTOList = orderDTO.getOrderDetailList().stream()
                     .map(e -> new CartDTO(e.getProductId(), e.getProductQuantity()))
                     .collect(Collectors.toList());
-            productService.increaseStock(cartDTOList);
+            restoreProductStockBestEffort(cartDTOList);
             restoreSkuStock(orderDTO);
             for (OrderDetail d : orderDTO.getOrderDetailList()) {
                 writeStockLedger(1, orderDTO.getOrderId(), d, d.getProductQuantity() == null ? 0 : d.getProductQuantity());
@@ -690,41 +742,49 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
+    public OrderDTO saveTransactionId(String orderId, String transactionId) {
+        OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderId)
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
+        orderMaster.setWxTransactionId(transactionId);
+        orderMasterRepository.save(orderMaster);
+        return findOne(orderId);
+    }
+
+    @Override
+    @Transactional
     public OrderDTO updateAmount(String orderId, BigDecimal newAmount) {
         if (newAmount == null || newAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw new SellException(ResultEnum.NEW_AMOUNT_ERROR);
         }
-        OrderDTO orderDTO = findOne(orderId);
+        // 行锁重读: 只改金额字段, 避免 copyProperties 整行覆盖并发写入的 payStatus/orderStatus
+        OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderId)
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
         // 已支付不能改价 (避免对账异常)
-        if (PayStatusEnum.SUCCESS.getCode().equals(orderDTO.getPayStatus())) {
+        if (PayStatusEnum.SUCCESS.getCode().equals(orderMaster.getPayStatus())) {
             throw new SellException(ResultEnum.ORDER_PAY_STATUS_ERROR);
         }
-        OrderMaster orderMaster = new OrderMaster();
-        BeanUtils.copyProperties(orderDTO, orderMaster);
         orderMaster.setOrderAmount(newAmount);
         orderMasterRepository.save(orderMaster);
-        orderDTO.setOrderAmount(newAmount);
-        return orderDTO;
+        return findOne(orderId);
     }
 
     @Override
     @Transactional
     public OrderDTO updatePayType(String orderId, Integer payType) {
-        OrderDTO orderDTO = findOne(orderId);
-        if (payType == null || payType.equals(orderDTO.getPayType())) {
-            return orderDTO;
+        // 行锁重读: 只改支付方式字段, 避免 copyProperties 整行覆盖并发写入的状态字段
+        OrderMaster orderMaster = orderMasterRepository.findByOrderIdForUpdate(orderId)
+                .orElseThrow(() -> new SellException(ResultEnum.ORDER_NOT_EXIST));
+        if (payType == null || payType.equals(orderMaster.getPayType())) {
+            return findOne(orderId);
         }
         // 已支付 / 已退款的订单保持原支付渠道, 避免与已发生的支付、退款渠道不一致
-        if (PayStatusEnum.SUCCESS.getCode().equals(orderDTO.getPayStatus())
-                || PayStatusEnum.REFUND.getCode().equals(orderDTO.getPayStatus())) {
-            return orderDTO;
+        if (PayStatusEnum.SUCCESS.getCode().equals(orderMaster.getPayStatus())
+                || PayStatusEnum.REFUND.getCode().equals(orderMaster.getPayStatus())) {
+            return findOne(orderId);
         }
-        OrderMaster orderMaster = new OrderMaster();
-        BeanUtils.copyProperties(orderDTO, orderMaster);
         orderMaster.setPayType(payType);
         orderMasterRepository.save(orderMaster);
-        orderDTO.setPayType(payType);
-        return orderDTO;
+        return findOne(orderId);
     }
 
     @Override
