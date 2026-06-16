@@ -1,0 +1,14 @@
+<view class="wrap">
+  <block wx:if="{{error}}">
+    <view class="icon-fail">!</view>
+    <view class="title">支付未完成</view>
+    <view class="sub muted">{{error}}</view>
+    <view class="btn-primary action" bindtap="retry">重新支付</view>
+    <view class="link muted" bindtap="toStatus">查看订单状态</view>
+  </block>
+  <block wx:else>
+    <view class="spinner"></view>
+    <view class="title">{{status}}</view>
+    <view class="sub muted">请在微信里完成支付</view>
+  </block>
+</view>

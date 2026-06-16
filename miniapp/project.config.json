@@ -1,0 +1,16 @@
+{
+  "description": "咖啡厅点单小程序",
+  "compileType": "miniprogram",
+  "libVersion": "latest",
+  "appid": "REPLACE_WITH_YOUR_MINI_APPID",
+  "projectname": "cafe-miniapp",
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "useCompilerPlugins": ["typescript"]
+  },
+  "packOptions": { "ignore": [], "include": [] }
+}

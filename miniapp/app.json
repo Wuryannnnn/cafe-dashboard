@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "pages/order/index",
+    "pages/pay/index",
+    "pages/status/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "点单",
+    "navigationBarBackgroundColor": "#6b4226",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f5f4"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

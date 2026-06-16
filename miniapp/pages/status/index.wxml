@@ -1,0 +1,14 @@
+<view class="wrap">
+  <view class="card">
+    <text class="label muted">取餐号</text>
+    <text class="pickup">{{pickupNumber || '—'}}</text>
+    <view class="status status-{{statusCode}}">{{statusText}}</view>
+    <text wx:if="{{amount}}" class="amount muted">实付 ¥{{amount}}</text>
+  </view>
+
+  <view wx:if="{{statusCode === 1}}" class="hint muted">正在为你制作，请稍候…</view>
+  <view wx:if="{{statusCode === 2}}" class="hint highlight">可以取餐啦！请到取餐口报取餐号</view>
+  <view wx:if="{{statusCode === 0}}" class="hint muted">已收到订单</view>
+
+  <view class="link muted" bindtap="backToOrder">再点一单</view>
+</view>

@@ -1,0 +1,32 @@
+<view class="page">
+  <scroll-view scroll-y class="menu">
+    <block wx:for="{{categories}}" wx:for-item="cat" wx:key="type">
+      <view class="cat-name">{{cat.name}}</view>
+      <view class="food" wx:for="{{cat.foods}}" wx:for-item="food" wx:key="productId">
+        <image wx:if="{{food.productIcon}}" class="food-icon" src="{{food.productIcon}}" mode="aspectFill" />
+        <view class="food-info">
+          <text class="food-name">{{food.productName}}</text>
+          <text class="food-desc muted">{{food.productDescription}}</text>
+          <text class="food-price">¥{{food.productPrice}}</text>
+        </view>
+        <view class="food-ctrl">
+          <view wx:if="{{cart[food.productId]}}" class="step minus" data-id="{{food.productId}}" bindtap="minus">−</view>
+          <text wx:if="{{cart[food.productId]}}" class="qty">{{cart[food.productId]}}</text>
+          <view class="step plus" data-id="{{food.productId}}" bindtap="add">＋</view>
+        </view>
+      </view>
+    </block>
+    <view wx:if="{{categories.length === 0}}" class="empty muted">菜单加载中…</view>
+    <view style="height: 160rpx"></view>
+  </scroll-view>
+
+  <view class="bar">
+    <view class="bar-info">
+      <text class="bar-total">¥{{total}}</text>
+      <text class="bar-count muted">共 {{cartCount}} 件</text>
+    </view>
+    <view class="bar-btn btn-primary {{cartCount === 0 ? 'disabled' : ''}}" bindtap="submit">
+      {{submitting ? '提交中…' : '去支付'}}
+    </view>
+  </view>
+</view>
