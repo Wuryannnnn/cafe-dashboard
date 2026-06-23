@@ -14,10 +14,18 @@ miniapp/
     request.ts   wx.request 封装（表单编码 + token 注入 + 401 重登）
     auth.ts      ensureLogin：wx.login → /mini/login 换 token
   pages/
-    order/   点单（菜单 /buyer/product/list + 购物车 → /mini/order/create）
+    order/   点单（左侧分类导航 + 菜单 + 规格/加料弹层 + 购物车明细 → /mini/order/create）
     pay/     支付（/pay/mini/create → wx.requestPayment）
     status/  状态（轮询 /buyer/order/status，叫号）
 ```
+
+## 点单页能力
+
+- **堂食 / 外带**：顶部切换。外带不绑桌台；后端按 `DiningTypeEnum`（0 堂食 / 1 外带）落库，小票、报表、后台订单列表都按此显示。
+- **分类导航**：左侧类目栏，点击跳转右侧菜单，手动滚动时高亮联动。
+- **规格 / 加料**：商品带 `skus`/`addons` 时点「选规格」弹层，单选规格、多选加料，价格随选实时变化；无规格商品直接 ±。
+- **购物车**：同一商品的不同规格/加料各算一行；底部🛒打开明细可逐行增减、清空。金额全程按「分」整数运算，避免浮点误差。
+- 下单时每行带 `skuId` + `addonFee`（加料总价，字符串）+ `addons`（加料明细 JSON，入库做小票）。
 
 ## 跑起来（微信开发者工具）
 
@@ -51,4 +59,4 @@ miniapp/
 
 - token 是后端自建的不透明会话标识（非 session_key），2 天有效，401 自动重登。
 - 第一版按 openid 匿名下单，不取手机号/头像昵称（YAGNI）。
-- 商品级点单（productId + 数量）；SKU/加料可后续在点单页扩展（后端 create 已支持）。
+- 订单备注暂未做：后端 `/mini/order/create` 暂不收备注字段，要加得先动后端。

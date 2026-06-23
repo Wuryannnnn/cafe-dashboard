@@ -66,5 +66,26 @@ public class MiniOrderControllerTest {
         OrderMaster om = orderMasterRepo.findById(orderId).orElse(null);
         assertNotNull(om);
         assertEquals("买家 openid 必须取自 token, 而非前端伪造值", "openid-buyer-1", om.getBuyerOpenid());
+        assertEquals("默认就餐方式应为堂食(0)", Integer.valueOf(0), om.getDiningType());
+    }
+
+    @Test
+    public void create_takeaway_setsDiningType1_andDropsTable() throws Exception {
+        // 外带: diningType=1; 即便误传 tableId 也应被丢弃(外带无桌台)
+        MvcResult res = mvc.perform(post("/mini/order/create")
+                        .header("Authorization", "tok-1")
+                        .param("tableId", "5")
+                        .param("diningType", "1")
+                        .param("items", "[{\"productId\":\"MINI_P1\",\"productQuantity\":1}]"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.orderId").exists())
+                .andReturn();
+
+        JsonObject root = JsonParser.parseString(res.getResponse().getContentAsString()).getAsJsonObject();
+        String orderId = root.getAsJsonObject("data").get("orderId").getAsString();
+        OrderMaster om = orderMasterRepo.findById(orderId).orElse(null);
+        assertNotNull(om);
+        assertEquals("外带就餐方式应为1", Integer.valueOf(1), om.getDiningType());
+        assertNull("外带不应绑定桌台", om.getTableId());
     }
 }

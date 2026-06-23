@@ -1,37 +1,146 @@
 .page { display: flex; flex-direction: column; height: 100vh; }
-.menu { flex: 1; padding: 0 24rpx; box-sizing: border-box; }
 
-.cat-name { font-size: 30rpx; font-weight: 600; color: #57534e; margin: 28rpx 8rpx 12rpx; }
+/* 堂食 / 外带 切换 */
+.dining { display: flex; padding: 14rpx 20rpx; background: #f5f5f4; }
+.dining-opt {
+  flex: 1; text-align: center; padding: 16rpx 0;
+  font-size: 26rpx; color: #57534e; border-radius: 999rpx;
+}
+.dining-opt.on {
+  background: #fff; color: var(--brand); font-weight: 600;
+  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.05);
+}
+
+.body { flex: 1; display: flex; overflow: hidden; }
+
+/* 左侧分类导航 */
+.rail { width: 168rpx; background: #efece8; box-sizing: border-box; }
+.rail-item {
+  padding: 30rpx 16rpx; font-size: 26rpx; color: #57534e;
+  text-align: center; line-height: 1.3;
+}
+.rail-item.on {
+  background: #f5f5f4; color: var(--brand); font-weight: 600;
+  position: relative;
+}
+.rail-item.on::before {
+  content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 6rpx; height: 36rpx; background: var(--brand); border-radius: 0 6rpx 6rpx 0;
+}
+
+/* 右侧菜单 */
+.menu { flex: 1; padding: 0 20rpx; box-sizing: border-box; }
+.cat-name { font-size: 28rpx; font-weight: 600; color: #57534e; margin: 24rpx 8rpx 12rpx; }
 
 .food {
   display: flex; align-items: center;
   background: #fff; border-radius: 20rpx;
   padding: 20rpx; margin-bottom: 16rpx;
 }
-.food-icon { width: 120rpx; height: 120rpx; border-radius: 16rpx; margin-right: 20rpx; background: #f5f5f4; }
-.food-info { flex: 1; display: flex; flex-direction: column; }
+.food-icon { width: 120rpx; height: 120rpx; border-radius: 16rpx; margin-right: 20rpx; background: #f5f5f4; flex-shrink: 0; }
+.food-icon.placeholder { background: #ece9e4; }
+.food-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .food-name { font-size: 30rpx; font-weight: 500; }
 .food-desc { font-size: 22rpx; margin: 6rpx 0; }
+.food-foot { display: flex; align-items: baseline; }
 .food-price { font-size: 30rpx; color: #b91c1c; font-weight: 600; }
+.price-note { font-size: 20rpx; margin-left: 4rpx; }
 
-.food-ctrl { display: flex; align-items: center; }
+.food-ctrl { display: flex; align-items: center; flex-shrink: 0; }
 .step {
   width: 56rpx; height: 56rpx; line-height: 52rpx; text-align: center;
-  border-radius: 999rpx; font-size: 40rpx;
+  border-radius: 999rpx; font-size: 40rpx; box-sizing: border-box;
 }
-.plus { background: #6b4226; color: #fff; }
+.plus { background: var(--brand); color: #fff; }
 .minus { border: 2rpx solid #d6d3d1; color: #57534e; }
 .qty { min-width: 48rpx; text-align: center; font-size: 30rpx; }
 
+.spec-btn {
+  background: var(--brand); color: #fff;
+  padding: 12rpx 22rpx; border-radius: 999rpx; font-size: 24rpx;
+}
+.combo-qty {
+  min-width: 36rpx; height: 36rpx; line-height: 36rpx; padding: 0 8rpx;
+  background: #b91c1c; color: #fff; border-radius: 999rpx;
+  font-size: 22rpx; text-align: center; margin-right: 12rpx;
+}
+
 .empty { text-align: center; padding: 80rpx 0; }
 
-.bar {
-  position: fixed; left: 0; right: 0; bottom: 0;
+/* 遮罩(购物车 sheet + 规格弹层共用) */
+.mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  z-index: 10; display: flex; flex-direction: column; justify-content: flex-end;
+}
+
+/* 购物车明细 sheet */
+.sheet {
+  background: #fff; border-radius: 28rpx 28rpx 0 0;
+  max-height: 64vh; display: flex; flex-direction: column;
+  /* sheet 打开时遮罩(z-index 10)已盖住底部栏(z-index 5), 自身贴底, 只留安全区 + 小边距 */
+  padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+}
+.sheet-head {
   display: flex; align-items: center; justify-content: space-between;
+  padding: 28rpx 32rpx; border-bottom: 2rpx solid #f5f5f4;
+}
+.sheet-title { font-size: 30rpx; font-weight: 600; }
+.sheet-clear { font-size: 26rpx; }
+.sheet-body { flex: 1; padding: 8rpx 32rpx; }
+.cart-line { display: flex; align-items: center; padding: 22rpx 0; border-bottom: 2rpx solid #f7f6f5; }
+.cart-line-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.cart-line-name { font-size: 28rpx; font-weight: 500; }
+.cart-line-spec { font-size: 22rpx; margin: 6rpx 0; }
+.cart-line-price { font-size: 26rpx; color: #b91c1c; font-weight: 600; }
+
+/* 规格/加料 弹层 */
+.spec {
+  background: #fff; border-radius: 28rpx 28rpx 0 0;
+  max-height: 76vh; display: flex; flex-direction: column;
+}
+.spec-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 32rpx 32rpx 16rpx;
+}
+.spec-name { font-size: 32rpx; font-weight: 600; }
+.spec-close { font-size: 48rpx; color: #a8a29e; line-height: 1; padding: 0 8rpx; }
+.spec-body { flex: 1; padding: 8rpx 32rpx; }
+.spec-group-title { font-size: 26rpx; color: #57534e; font-weight: 600; margin: 24rpx 0 16rpx; }
+.spec-opts { display: flex; flex-wrap: wrap; }
+.opt {
+  display: flex; align-items: center;
+  border: 2rpx solid #e7e5e4; border-radius: 999rpx;
+  padding: 14rpx 26rpx; margin: 0 16rpx 16rpx 0;
+  font-size: 26rpx; color: #44403c;
+}
+.opt.on { border-color: var(--brand); background: #f6efe9; color: var(--brand); }
+.opt-price { margin-left: 10rpx; font-size: 24rpx; }
+
+.spec-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid #f5f5f4;
+}
+.spec-foot-price { display: flex; align-items: baseline; }
+.spec-total { font-size: 38rpx; font-weight: 700; color: #b91c1c; }
+.spec-add { padding: 22rpx 56rpx; font-size: 30rpx; }
+
+/* 底部结算栏 */
+.bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: flex; align-items: center;
   padding: 20rpx 28rpx calc(20rpx + env(safe-area-inset-bottom));
   background: #fff; box-shadow: 0 -2rpx 16rpx rgba(0,0,0,0.06);
 }
-.bar-info { display: flex; flex-direction: column; }
+.bar-cart { position: relative; width: 72rpx; text-align: center; margin-right: 20rpx; }
+.bar-cart-icon { font-size: 48rpx; }
+.bar-badge {
+  position: absolute; top: -8rpx; right: -8rpx;
+  min-width: 32rpx; height: 32rpx; line-height: 32rpx; padding: 0 6rpx;
+  background: #b91c1c; color: #fff; border-radius: 999rpx;
+  font-size: 20rpx; text-align: center;
+}
+.bar-info { flex: 1; display: flex; flex-direction: column; }
 .bar-total { font-size: 38rpx; font-weight: 700; color: #b91c1c; }
 .bar-count { font-size: 22rpx; }
 .bar-btn { padding: 22rpx 56rpx; font-size: 30rpx; }

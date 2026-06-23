@@ -28,6 +28,7 @@ public class MiniOrderController {
 
     @PostMapping("/create")
     public ResultVO<Map<String, String>> create(@RequestParam(value = "tableId", required = false) Integer tableId,
+                                                 @RequestParam(value = "diningType", required = false) Integer diningType,
                                                  @RequestParam("items") String items,
                                                  HttpServletRequest request) {
         String openid = (String) request.getAttribute(MiniAuthInterceptor.ATTR_OPENID);
@@ -42,13 +43,16 @@ public class MiniOrderController {
             throw new SellException(ResultEnum.CART_EMPTY);
         }
 
+        // 就餐方式: 0堂食 1外带, 缺省/非法值一律归堂食; 外带不绑桌台
+        int dining = (diningType != null && diningType == 1) ? 1 : 0;
+
         OrderDTO dto = new OrderDTO();
         dto.setBuyerOpenid(openid);   // 服务端注入, 忽略前端 openid
         dto.setBuyerName("微信顾客");
         dto.setBuyerPhone("");
         dto.setBuyerAddress("");
-        dto.setDiningType(0);
-        dto.setTableId(tableId);
+        dto.setDiningType(dining);
+        dto.setTableId(dining == 1 ? null : tableId);   // 外带无桌台, 即便前端误传也丢弃
         dto.setOrderDetailList(details);
         OrderDTO created = orderService.create(dto);
 
